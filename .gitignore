@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+*.egg-info/
+
+# Environment
+.env*
+tidal_session.json
+
+# Logs
+*.log
