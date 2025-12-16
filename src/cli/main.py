@@ -42,6 +42,7 @@ def main(num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, artist, t
 
         # Step 2: Process each seed track to get artist tags and similar tracks
         similar_tracks = []
+        no_similar_tracks_seeds = []
         logging.info("Fetching artist tags and similar tracks for seeds:")
         for t in seed_tracks:
             try:
@@ -51,7 +52,10 @@ def main(num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, artist, t
                 logging.info(f"  - Processing: {t.title} by {t.artist.name} {tag_log}")
 
                 # Get similar tracks
-                similar_tracks.extend(lastfm_service.get_similar_tracks(lastfm_network, t, 1000 if shuffle else num_similar_tracks))
+                found_tracks = lastfm_service.get_similar_tracks(lastfm_network, t, 1000 if shuffle else num_similar_tracks)
+                if not found_tracks:
+                    no_similar_tracks_seeds.append(t)
+                similar_tracks.extend(found_tracks)
             except Exception as e:
                 logging.warning(f"Could not process track '{t.title}': {e}")
         
@@ -84,7 +88,7 @@ def main(num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, artist, t
                 logging.warning(f"Could not get tags for artist {t.artist.name}: {e}")
 
         playlist = tidal_service.create_playlist(
-            tidal_session, playlist_name, num_tidal_tracks, num_similar_tracks, seed_tracks, final_playlist_tags
+            tidal_session, playlist_name, num_tidal_tracks, num_similar_tracks, seed_tracks, final_playlist_tags, no_similar_tracks_seeds
         )
 
         if not playlist or not playlist.id:
