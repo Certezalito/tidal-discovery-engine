@@ -5,14 +5,15 @@ A command-line tool that generates a new Tidal playlist with Last.fm recommended
 ## Setup
 
 1.  Clone the repository.
-2.  Install dependencies with `uv`: `uv pip install -e .`
-3.  Create a `.env` file and add your Last.fm API key. You can get one from your [Last.fm API account page](https://www.last.fm/api/account/create).
+2.  Create a virtual environment: `uv venv`
+3.  Install dependencies: `uv pip install -e .`
+4.  Create a `.env` file and add your Last.fm API key. You can get one from your [Last.fm API account page](https://www.last.fm/api/account/create).
 
     ```
     LASTFM_API_KEY=your_api_key
     ```
 
-4.  Run the script once interactively to authenticate with Tidal. This will create a `tidal_session.json` file in the root of the project, which will be used for all future non-interactive runs.
+5.  Run the script once interactively to authenticate with Tidal. This will create a `tidal_session.json` file in the root of the project, which will be used for all future non-interactive runs.
 
 ## Usage
 
