@@ -8,4 +8,5 @@ dependencies = [
     "click",
     "tidalapi",
     "pylast",
+    "python-dotenv",
 ]
