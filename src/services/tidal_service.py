@@ -56,7 +56,7 @@ def get_random_favorite_tracks(session, num_tracks):
         
     return random.sample(favorite_tracks, num_tracks)
 
-def create_playlist(session, name, num_tidal_tracks, num_similar_tracks, seed_tracks, final_tags):
+def create_playlist(session, name, num_tidal_tracks, num_similar_tracks, seed_tracks, final_tags, no_similar_tracks_seeds=None):
     run_date = datetime.date.today().isoformat()
     
     seed_track_list = " | ".join([f"{t.title} by {t.artist.name}" for t in seed_tracks])
@@ -74,11 +74,17 @@ def create_playlist(session, name, num_tidal_tracks, num_similar_tracks, seed_tr
             genre_items.append(f"{genre.title()}: {percentage:.0f}%")
         genre_mix_summary = " Genre Mix: " + " | ".join(genre_items) + "."
 
+    no_similar_tracks_summary = ""
+    if no_similar_tracks_seeds:
+        no_similar_tracks_list = " | ".join([f"{t.title} by {t.artist.name}" for t in no_similar_tracks_seeds])
+        no_similar_tracks_summary = f" No similar tracks found for: {no_similar_tracks_list}."
+
     description = (
         f"Generated on {run_date}. "
         f"Based on {num_tidal_tracks} seed tracks: {seed_track_list}. "
         f"Found {num_similar_tracks} similar tracks for each via Last.fm."
         f"{genre_mix_summary}"
+        f"{no_similar_tracks_summary}"
     )
 
     # Truncate the description if it's too long
