@@ -41,6 +41,9 @@ def get_session():
 
 def get_random_favorite_tracks(session, num_tracks):
     favorites = session.user.favorites.tracks()
+    if len(favorites) < num_tracks:
+        click.echo(f"Warning: Requested {num_tracks} favorite tracks, but only {len(favorites)} were found. Using all available favorite tracks.")
+        return favorites
     return random.sample(favorites, num_tracks)
 
 def create_playlist(session, name, num_tidal_tracks, num_similar_tracks, seed_tracks, final_tags, no_similar_tracks_seeds=None):
