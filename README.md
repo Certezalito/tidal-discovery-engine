@@ -41,9 +41,18 @@ uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --num-s
 
 For either of the modes above, you can add the `--shuffle` flag. This tells the script to fetch a large pool of similar tracks (up to 1000 per seed) and then randomly select the number specified by `--num-similar-tracks`. This is a great way to discover less obvious recommendations.
 
-**Example (with Mode 1):**
+**Example (Mode 1 + Shuffle):**
 ```bash
 uv run python -m src.cli.main --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE Shuffle {date}" --shuffle
+```
+
+### Organizing Playlists
+
+You can organize your generated playlists into a specific folder using the `--folder` argument. If the folder doesn't exist, it will be created automatically.
+
+**Example:**
+```bash
+uv run python -m src.cli.main --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}" --folder "My Discovery Mixes"
 ```
 
 ### All Parameters
@@ -100,7 +109,7 @@ This project was developed using a unique, AI-driven workflow inside Visual Stud
 The primary tools used were:
 
 *   **GitHub Copilot:** Used as the core AI assistant for generating and refining code.
-*   **Gemini 2.5 Pro:** Integrated for advanced reasoning and to help guide the development process.
+*   **Gemini 2.5/3.0 Pro:** Integrated for advanced reasoning and to help guide the development process.
 *   **Spec Kit:** A set of prompts and scripts that enforce a rigorous, specification-driven development process. This included generating a constitution, a detailed specification, a project plan, and a task list before any code was written.
 
 This approach ensured that the project was well-defined, robust, and implemented efficiently, with the AI agents handling the heavy lifting of code generation and iteration.
