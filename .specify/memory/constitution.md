@@ -1,17 +1,13 @@
 <!--
 Sync Impact Report:
-- **Version Change**: Template → 1.0.0
+- **Version Change**: 1.0.0 → 1.1.0
 - **Modified Principles**:
-  - Defined: User-Centricity (CLI focus)
-  - Defined: Automation (Time saving)
-  - Defined: Personalization (Taste tailoring)
-  - Defined: Extensibility (Modular design)
-  - Defined: Reliability (Robustness & Logging)
-- **Added Sections**:
-  - Mission Statement
-  - Technical Standards (derived from project context: Python, uv, Click)
-- **Templates requiring updates**: None (Initial definition)
-- **Follow-up TODOs**: None
+  - Quality Gates: Added requirement for end-user documentation updates.
+- **Added Sections**: None
+- **Templates requiring updates**: 
+  - .specify/templates/plan-template.md (⚠ pending - check "Constitution Check" section logic)
+  - .specify/templates/spec-template.md (⚠ pending - might need explicit docs section)
+- **Follow-up TODOs**: Review templates to ensure docs task is default.
 -->
 # Tidal Discovery Engine Constitution
 
@@ -48,8 +44,9 @@ To create a personalized music discovery tool that seamlessly integrates with a 
 - All features must include error handling suitable for unattended execution.
 - Code must adhere to modular design principles to support the Extensibility principle.
 - All dependencies must be managed via `uv`.
+- **Documentation**: End-user documentation (README, Quickstart) MUST be updated immediately when new features are added or existing behaviors change.
 
 ## Governance
 This Constitution supersedes all other practices. Amendments require documentation, approval, and a corresponding version bump. All PRs and reviews must verify compliance with the Core Principles, particularly Reliability and Extensibility for new features.
 
-**Version**: 1.0.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-01-15
+**Version**: 1.1.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-01-21
