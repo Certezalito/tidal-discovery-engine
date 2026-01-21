@@ -22,6 +22,7 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 004-update-readme-examples: Added [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
 
 - 003-custom-playlist-folder: Added
 
