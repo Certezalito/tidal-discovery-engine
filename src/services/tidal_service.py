@@ -60,7 +60,7 @@ def get_random_favorite_tracks(session, num_tracks):
         
     return random.sample(favorite_tracks, num_tracks)
 
-def create_playlist(session, name, num_tidal_tracks, num_similar_tracks, seed_tracks, final_tags, no_similar_tracks_seeds=None, folder_id=None):
+def create_playlist(session, name, num_tidal_tracks, num_similar_tracks, seed_tracks, final_tags, no_similar_tracks_seeds=None, folder_id=None, tracks=None):
     run_date = datetime.date.today().isoformat()
     
     seed_track_list = " | ".join([f"{t.title} by {t.artist.name}" for t in seed_tracks])
@@ -95,10 +95,15 @@ def create_playlist(session, name, num_tidal_tracks, num_similar_tracks, seed_tr
     if len(description) > 500:
         description = description[:497] + "..."
         
+    track_ids = [t.id for t in tracks] if tracks else []
+
     if folder_id:
-        return create_playlist_in_folder(session, name, description, folder_id, track_ids=[])
+        return create_playlist_in_folder(session, name, description, folder_id, track_ids=track_ids)
     
-    return session.user.create_playlist(name, description)
+    playlist = session.user.create_playlist(name, description)
+    if track_ids:
+        playlist.add(track_ids)
+    return playlist
 
 def search_for_track(session, track):
     query = f"{track.artist.name} - {track.title}"

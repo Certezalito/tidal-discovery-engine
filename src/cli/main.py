@@ -103,7 +103,7 @@ def main(num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, artist, t
                 logging.error(f"Failed to process folder '{folder}': {e}. Proceeding without folder.")
 
         playlist = tidal_service.create_playlist(
-            tidal_session, playlist_name, num_tidal_tracks, num_similar_tracks, seed_tracks, final_playlist_tags, no_similar_tracks_seeds, folder_id=folder_id
+            tidal_session, playlist_name, num_tidal_tracks, num_similar_tracks, seed_tracks, final_playlist_tags, no_similar_tracks_seeds, folder_id=folder_id, tracks=tidal_tracks_to_add
         )
 
         if not playlist or not playlist.id:
@@ -111,8 +111,6 @@ def main(num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, artist, t
             return
 
         logging.info(f"Playlist '{playlist.name}' created with ID: {playlist.id}")
-
-        tidal_service.add_tracks_to_playlist(playlist, tidal_tracks_to_add)
         logging.info(f"Successfully added {len(tidal_tracks_to_add)} tracks to the playlist.")
 
         playlist_url = f"https://tidal.com/browse/playlist/{playlist.id}"
