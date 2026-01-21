@@ -3,9 +3,9 @@ import json
 import random
 import time
 import tidalapi
-from tidalapi.exceptions import ObjectNotFound, TidalAPIError
+from tidalapi.exceptions import ObjectNotFound
 from requests.exceptions import HTTPError
-import requests
+
 import click
 import datetime
 
