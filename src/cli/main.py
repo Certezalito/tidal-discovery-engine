@@ -12,7 +12,8 @@ from src.services import tidal_service, lastfm_service
 @click.option("--playlist-name", required=True, help="The name for the new Tidal playlist. Use {date} for dynamic date.")
 @click.option("--artist", help="The artist of a specific track to use as a seed.")
 @click.option("--track", help="The title of a specific track to use as a seed.")
-def main(num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, artist, track):
+@click.option("--folder", help="Optional folder name to organize the playlist.")
+def main(num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, artist, track, folder):
     """
     Generates a new Tidal playlist with recommended tracks based on a selection of your favorite tracks.
     """
@@ -92,8 +93,17 @@ def main(num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, artist, t
             except Exception as e:
                 logging.warning(f"Could not get tags for artist {t.artist.name}: {e}")
 
+        folder_id = None
+        if folder:
+            try:
+                folder_obj = tidal_service.get_or_create_folder(tidal_session, folder)
+                folder_id = folder_obj.id
+                logging.info(f"Target folder: {folder_obj.name} (ID: {folder_obj.id})")
+            except Exception as e:
+                logging.error(f"Failed to process folder '{folder}': {e}. Proceeding without folder.")
+
         playlist = tidal_service.create_playlist(
-            tidal_session, playlist_name, num_tidal_tracks, num_similar_tracks, seed_tracks, final_playlist_tags, no_similar_tracks_seeds
+            tidal_session, playlist_name, num_tidal_tracks, num_similar_tracks, seed_tracks, final_playlist_tags, no_similar_tracks_seeds, folder_id=folder_id, tracks=tidal_tracks_to_add
         )
 
         if not playlist or not playlist.id:
@@ -101,8 +111,6 @@ def main(num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, artist, t
             return
 
         logging.info(f"Playlist '{playlist.name}' created with ID: {playlist.id}")
-
-        tidal_service.add_tracks_to_playlist(playlist, tidal_tracks_to_add)
         logging.info(f"Successfully added {len(tidal_tracks_to_add)} tracks to the playlist.")
 
         playlist_url = f"https://tidal.com/browse/playlist/{playlist.id}"

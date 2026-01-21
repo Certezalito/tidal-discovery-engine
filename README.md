@@ -56,6 +56,7 @@ uv run python -m src.cli.main --num-tidal-tracks 5 --num-similar-tracks 10 --pla
 | `--artist`             | (Mode 2) The artist of a specific track to use as a seed. Must be used with `--track`.                       |         | No       |
 | `--track`              | (Mode 2) The title of a specific track to use as a seed. Must be used with `--artist`.                      |         | No       |
 | `--playlist-name`      | The name for the new Tidal playlist. You can use `{date}` to automatically insert the current date (`YYYYMMDD`). |         | Yes      |
+| `--folder`             | The name of the folder where the playlist should be created. If the folder doesn't exist, it will be created.|         | No       |
 
 
 ## Scheduling

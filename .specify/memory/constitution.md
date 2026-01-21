@@ -1,50 +1,55 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report:
+- **Version Change**: Template → 1.0.0
+- **Modified Principles**:
+  - Defined: User-Centricity (CLI focus)
+  - Defined: Automation (Time saving)
+  - Defined: Personalization (Taste tailoring)
+  - Defined: Extensibility (Modular design)
+  - Defined: Reliability (Robustness & Logging)
+- **Added Sections**:
+  - Mission Statement
+  - Technical Standards (derived from project context: Python, uv, Click)
+- **Templates requiring updates**: None (Initial definition)
+- **Follow-up TODOs**: None
+-->
+# Tidal Discovery Engine Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. User-Centricity
+The project will prioritize a simple and intuitive command-line interface (CLI) that allows for easy configuration and operation. Configuration should be minimal and usage straightforward for end-users.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### II. Automation
+The core value lies in automating the process of finding new music and creating playlists, saving the user time and effort. Workflows should be designed to run without manual intervention once configured (e.g., support for schedulers/cron).
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### III. Personalization
+By starting with the user's favorite tracks, the generated playlists will be tailored to their specific musical tastes. Algorithms and integrations must respect and leverage user data to maximize relevance.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IV. Extensibility
+The project will be built with a modular design to potentially accommodate other music services or recommendation engines in the future. Code should be loosely coupled and interfaces clearly defined.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### V. Reliability
+The application will be robust, with proper error handling and logging to ensure consistent and predictable behavior, especially when running as a scheduled task. Failures should be handled gracefully and logged for diagnosis.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+## Mission
+To create a personalized music discovery tool that seamlessly integrates with a user's Tidal library, leverages Last.fm's recommendation engine, and automates the creation of new playlists to enrich the user's listening experience.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+## Technical Standards & Workflow
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+**Technology Stack:**
+- **Language**: Python
+- **Dependency Management**: `uv`
+- **CLI Framework**: `click`
+- **Configuration**: `.env` for secrets/config
+- **Logging**: Python `logging` module (stdout + file)
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+**Quality Gates:**
+- All features must include error handling suitable for unattended execution.
+- Code must adhere to modular design principles to support the Extensibility principle.
+- All dependencies must be managed via `uv`.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
+This Constitution supersedes all other practices. Amendments require documentation, approval, and a corresponding version bump. All PRs and reviews must verify compliance with the Core Principles, particularly Reliability and Extensibility for new features.
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
-
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-01-15
