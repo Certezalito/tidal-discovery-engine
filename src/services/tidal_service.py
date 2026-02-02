@@ -227,13 +227,20 @@ def get_track_by_isrc(session, isrc):
     Strict matching: Does NOT fall back to text search.
     """
     try:
-        # Search using the ISRC as the query
-        results = session.search(isrc, models=[tidalapi.Track])
-        tracks = results.get('tracks', [])
-        
-        if tracks:
-            return tracks[0]
+        # Use the specific ISRC lookup method provided by the library
+        if hasattr(session, 'get_tracks_by_isrc'):
+             tracks = session.get_tracks_by_isrc(isrc) # Returns list of tracks
+             if tracks:
+                 return tracks[0]
+        else:
+            # Fallback for older library versions if method missing (unlikely given inspection)
+            # This is the "search by string" which we know fails, but leaving as safety?
+            # No, if the method exists, use it. If not, fail.
+            pass
             
+    except ObjectNotFound:
+        # Specific exception raised when ISRC is not found
+        pass
     except Exception as e:
         # We rely on the caller to log robustly, but a basic print for now or silence is fine 
         # as the plan says "Log the error and skip". The caller (main.py) handles logging.
