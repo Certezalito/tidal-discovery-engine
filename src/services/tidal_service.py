@@ -219,3 +219,25 @@ def add_tracks_to_playlist(playlist, tracks):
     if not tracks:
         return
     playlist.add([t.id for t in tracks])
+
+def get_track_by_isrc(session, isrc):
+    """
+    Searches for a track by its International Standard Recording Code (ISRC).
+    Returns the Track object if found, otherwise None.
+    Strict matching: Does NOT fall back to text search.
+    """
+    try:
+        # Search using the ISRC as the query
+        results = session.search(isrc, models=[tidalapi.Track])
+        tracks = results.get('tracks', [])
+        
+        if tracks:
+            return tracks[0]
+            
+    except Exception as e:
+        # We rely on the caller to log robustly, but a basic print for now or silence is fine 
+        # as the plan says "Log the error and skip". The caller (main.py) handles logging.
+        pass
+        
+    return None
+

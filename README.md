@@ -37,6 +37,25 @@ You can also generate a playlist based on a single, specific song. This is perfe
 uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --num-similar-tracks 1000 --playlist-name "Gamemaster Vibes"
 ```
 
+### Mode 3: AI-Powered Recommendations (Gemini)
+
+Use Google Gemini AI to generate recommendations instead of the standard algorithm. 
+- **Standard**: Generates popular/highly relevant suggestions.
+- **With Shuffle**: Generates "Deep Cuts", underground, and lesser-known tracks.
+
+**Requirements**:
+Add `GEMINI_API_KEY=your_key` to your `.env` file.
+
+**Example (Standard AI):**
+```bash
+uv run python -m src.cli.main --gemini --playlist-name "AI Hits"
+```
+
+**Example (AI Deep Cuts):**
+```bash
+uv run python -m src.cli.main --gemini --shuffle --playlist-name "AI Underground"
+```
+
 ### Modifier: Adding Variety with Shuffle
 
 For either of the modes above, you can add the `--shuffle` flag. This tells the script to fetch a large pool of similar tracks (up to 1000 per seed) and then randomly select the number specified by `--num-similar-tracks`. This is a great way to discover less obvious recommendations.

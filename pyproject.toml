@@ -9,4 +9,5 @@ dependencies = [
     "tidalapi",
     "pylast",
     "python-dotenv",
+    "google-genai>=1.61.0",
 ]
