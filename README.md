@@ -11,13 +11,14 @@ A command-line tool that generates a new Tidal playlist with Last.fm recommended
 
     ```
     LASTFM_API_KEY=your_api_key
+    GEMINI_API_KEY=your_key
     ```
 
 5.  Run the script once interactively to authenticate with Tidal. This will create a `tidal_session.json` file in the root of the project, which will be used for all future non-interactive runs.
 
 ## Usage
 
-This tool has two main modes of operation and a shuffle modifier that can be combined with either mode.
+This tool has two main modes of operation and a shuffle modifier that can be combined with either mode.  Use `--folder` to put the generated playlists into a folder (folder will be made if it doesn't exist)
 
 ### Mode 1: Generate from Your Favorite Tracks
 
@@ -28,23 +29,13 @@ This is the default mode. The script will select a random number of tracks from 
 uv run python -m src.cli.main --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}"
 ```
 
-### Mode 2: Generate from a Single Seed Track
 
-You can also generate a playlist based on a single, specific song. This is perfect for exploring the sound of a track you've just discovered.
-
-**Example:**
-```bash
-uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --num-similar-tracks 1000 --playlist-name "Gamemaster Vibes"
-```
-
-### Mode 3: AI-Powered Recommendations (Gemini)
+### Mode 2: AI-Powered Recommendations (Gemini)
 
 Use Google Gemini AI to generate recommendations instead of the standard algorithm. 
 - **Standard**: Generates popular/highly relevant suggestions.
 - **With Shuffle**: Generates "Deep Cuts", underground, and lesser-known tracks.
 
-**Requirements**:
-Add `GEMINI_API_KEY=your_key` to your `.env` file.
 
 **Example (Standard AI):**
 ```bash
@@ -56,7 +47,17 @@ uv run python -m src.cli.main --gemini --playlist-name "AI Hits"
 uv run python -m src.cli.main --gemini --shuffle --playlist-name "AI Underground"
 ```
 
-### Modifier: Adding Variety with Shuffle
+### Mode 3: Generate from a Single Seed Track
+
+You can also generate a playlist based on a single, specific song. This is perfect for exploring the sound of a track you've just discovered.
+
+**Example:**
+```bash
+uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --num-similar-tracks 1000 --playlist-name "Gamemaster Vibes"
+```
+
+
+### Modifier: Deeper cuts: Adding Variety with Shuffle
 
 For either of the modes above, you can add the `--shuffle` flag. This tells the script to fetch a large pool of similar tracks (up to 1000 per seed) and then randomly select the number specified by `--num-similar-tracks`. This is a great way to discover less obvious recommendations.
 
@@ -65,14 +66,7 @@ For either of the modes above, you can add the `--shuffle` flag. This tells the 
 uv run python -m src.cli.main --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE Shuffle {date}" --shuffle
 ```
 
-### Organizing Playlists
 
-You can organize your generated playlists into a specific folder using the `--folder` argument. If the folder doesn't exist, it will be created automatically.
-
-**Example:**
-```bash
-uv run python -m src.cli.main --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}" --folder "My Discovery Mixes"
-```
 
 ### All Parameters
 
