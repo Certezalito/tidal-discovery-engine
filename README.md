@@ -73,10 +73,11 @@ uv run python -m src.cli.main --num-tidal-tracks 5 --num-similar-tracks 10 --pla
 | Option                 | Description                                                                                                | Default | Required |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------- | ------- | -------- |
 | `--num-tidal-tracks`   | (Mode 1) The number of random favorite tracks to select from Tidal to use as seeds.                          | `10`    | No       |
-| `--num-similar-tracks` | The number of similar tracks to retrieve from Last.fm for each seed track.                                 | `5`     | No       |
-| `--shuffle`            | If enabled, fetches a large pool of similar tracks (1000) and randomly selects from it to increase variety.         | `False` | No       |
-| `--artist`             | (Mode 2) The artist of a specific track to use as a seed. Must be used with `--track`.                       |         | No       |
-| `--track`              | (Mode 2) The title of a specific track to use as a seed. Must be used with `--artist`.                      |         | No       |
+| `--num-similar-tracks` | The number of similar tracks to retrieve (per seed).                                 | `5`     | No       |
+| `--gemini`             | (Mode 2) Use Google Gemini AI for recommendations instead of Last.fm.                                        | `False` | No       |
+| `--shuffle`            | (Last.fm) Larger pool. (Gemini) Deep Cuts / underground tracks.                                            | `False` | No       |
+| `--artist`             | (Mode 3) The artist of a specific track to use as a seed. Must be used with `--track`.                       |         | No       |
+| `--track`              | (Mode 3) The title of a specific track to use as a seed. Must be used with `--artist`.                      |         | No       |
 | `--playlist-name`      | The name for the new Tidal playlist. You can use `{date}` to automatically insert the current date (`YYYYMMDD`). |         | Yes      |
 | `--folder`             | The name of the folder where the playlist should be created. If the folder doesn't exist, it will be created.|         | No       |
 
