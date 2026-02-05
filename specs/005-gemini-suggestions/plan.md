@@ -59,3 +59,13 @@
 
 1. **Run Verification Script**: Execute the existing manual test/script to verify suggestions are still generated and parsed correctly.
 2. **Check Error Handling**: Verify invalid API key behavior.
+
+### Phase 4: Resolution Reliability (Pivot)
+*Switch from Hallucinating ISRCs to String Search.*
+
+1. **Update `src/services/gemini_service.py`**:
+    - Remove ISRC requirement from Prompt.
+    - Make `isrc` optional in `Song` schema.
+2. **Update `src/cli/main.py`**:
+    - Add fallback: If ISRC is missing or lookup fails, call `tidal_service.search_for_track(artist, title)`.
+    - Retain logging to compare methods (Hybrid approach).

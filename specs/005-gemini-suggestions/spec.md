@@ -8,10 +8,10 @@
 ## Clarifications
 
 ### Session 2026-02-02
-- Q: How do we map the AI's text-based suggestions to Tidal Track IDs? → A: Use ISRC code mechanism.
-- Q: How to handle cases where the provided ISRC is not found in Tidal? → A: Log the error and skip the track (no text search fallback).
+- Q: How do we map the AI's text-based suggestions to Tidal Track IDs? → A: Use ISRC code mechanism (primary) and String Search (fallback).
+- Q: How to handle cases where the provided ISRC is not found in Tidal? → A: Fall back to searching by Artist and Title string.
 - Q: How many seed tracks should be included in the AI prompt? → A: Use the existing `--num-tidal-tracks` value as the limit.
-- Q: What is the required response format from the AI to ensure reliable parsing? → A: Strict Structured JSON Schema (Artist, Title, ISRC).
+- Q: What is the required response format from the AI to ensure reliable parsing? → A: Structured JSON Schema (Artist, Title, optional ISRC).
 - Q: How many suggestions should be requested from the AI? → A: Calculated Total (`seeds * num_similar_tracks`).
 
 ## User Scenarios & Testing *(mandatory)*
@@ -57,17 +57,17 @@ As a "crate digger", I want to specifically ask the AI for obscure or undergroun
 - **FR-001**: System MUST accept a new CLI parameter `--gemini`.
 - **FR-002**: System MUST read `GEMINI_API_KEY` from the environment variables when `--gemini` is active.
 - **FR-003**: System MUST validation that `GEMINI_API_KEY` exists before attempting API calls; if missing, fail with a user-friendly error.
-- **FR-004**: System MUST construct a prompt for the Gemini API that includes the input songs/context and explicitly requests the International Standard Recording Code (ISRC) for each suggested track.
+- **FR-004**: System MUST construct a prompt for the Gemini API that includes the input songs/context and requests song recommendations with Artist and Title (ISRC optional).
 - **FR-004.1**: The number of seed tracks included in the prompt MUST be determined by the existing `--num-tidal-tracks` parameter (default: 10).
 - **FR-004.2**: The prompt MUST request a total number of recommendations equal to `len(seed_tracks) * num_similar_tracks`.
 - **FR-005**: If `--gemini` is used WITHOUT `--shuffle`, the prompt MUST explicitly request "popular" or "highly relevant" songs similar to the input.
 - **FR-006**: If `--gemini` is used WITH `--shuffle`, the prompt MUST explicitly request "lesser-known," "underground," or "deep cut" songs similar to the input.
-- **FR-007**: System MUST parse the response from Gemini and map it to the application's internal "Song" structure, including the ISRC.
-- **FR-007.1**: The prompt MUST instruct Gemini to return data in a strict JSON array format with keys: "artist", "title", "isrc".
+- **FR-007**: System MUST parse the response from Gemini and map it to the application's internal "Song" structure.
+- **FR-007.1**: The prompt MUST instruct Gemini to return data in a strict JSON array format with keys: "artist", "title", "isrc" (optional).
 - **FR-008**: System MUST output the resulting song list in the exact same format as the existing suggestion engine to ensure compatibility with downstream processing (e.g., playlist creation).
 - **FR-009**: System MUST handle API exceptions (network, auth, rate limit) and display a readable error message to the CLI.
-- **FR-010**: System MUST use the suggested track's ISRC to query the Tidal API for the exact matching track ID.
-- **FR-011**: If an ISRC lookup fails (returns 404 or no match), the System MUST log the failure and skip that track. It MUST NOT fall back to text-based search.
+- **FR-010**: System MUST attempt to resolve tracks first by ISRC (if provided).
+- **FR-011**: If an ISRC lookup fails (or is not provided), the System MUST fall back to text-based search (Artist + Title).
 
 ### Success Criteria
 

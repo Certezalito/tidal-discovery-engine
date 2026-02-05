@@ -25,7 +25,14 @@
 
 - [x] T005 [US2] Verify and adjust shuffle prompt parameters compatibility in [src/services/gemini_service.py](src/services/gemini_service.py)
 
-## Phase 5: Polish & Cross-Cutting
+## Phase 5: Resolution Pivot
+*Goal: Fix 0% match rate by using String Search.*
+
+- [x] T008 Update `Song` schema in [src/services/gemini_service.py](src/services/gemini_service.py) to make `isrc` optional (default None).
+- [x] T009 Update `get_recommendations` prompt in [src/services/gemini_service.py](src/services/gemini_service.py) to request Artist/Title only (remove strict ISRC demand).
+- [x] T010 Implement fallback search logic (Artist+Title) in [src/cli/main.py](src/cli/main.py) when ISRC lookup fails.
+
+## Phase 6: Polish & Cross-Cutting
 *Error handling and docs.*
 
 - [x] T006 Implement error handling for `genai.errors` in [src/services/gemini_service.py](src/services/gemini_service.py)

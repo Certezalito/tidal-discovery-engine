@@ -7,7 +7,7 @@ from google.genai import types
 class Song(BaseModel):
     artist: str
     title: str
-    isrc: str
+    isrc: str | None = None  # Make ISRC optional
 
 def get_recommendations(api_key, seed_tracks, count, shuffle=False):
     """
@@ -41,9 +41,7 @@ def get_recommendations(api_key, seed_tracks, count, shuffle=False):
     # Prompt Construction
     base_instruction = (
         f"I will provide a list of {len(seed_tracks)} songs I like. "
-        f"Please generate a list of exactly {count} NEW song recommendations based on this taste profile.\n"
-        "IMPORTANT: You must provide a valid US-based ISRC (starting with 'US') for every track. "
-        "If you cannot find a high-confidence US ISRC, do not include the track."
+        f"Please generate a list of exactly {count} NEW song recommendations based on this taste profile."
     )
 
     style_instruction = ""
@@ -62,7 +60,7 @@ def get_recommendations(api_key, seed_tracks, count, shuffle=False):
         )
 
     # Note: Explicit JSON instructions are less critical with response_schema, but good for context
-    format_instruction = "Output a list of songs with artist, title, and ISRC."
+    format_instruction = "Output a list of songs with artist and title."
 
     full_prompt = (
         f"{base_instruction}\n\n"

@@ -67,25 +67,44 @@ def main(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, a
                 shuffle=shuffle # T008: Pass shuffle flag
             )
             
-            logging.info(f"Gemini returned {len(recommendations)} suggestions. Resolving ISRCs...")
+            logging.info(f"Gemini returned {len(recommendations)} suggestions. Resolving tracks...")
             
             # T006: ISRC Resolution Loop
             for item in recommendations:
                 try:
+                    artist_name = item.get('artist')
+                    track_title = item.get('title')
                     isrc = item.get('isrc')
-                    if not isrc:
-                        logging.warning(f"Skipping track '{item.get('title')}' - No ISRC provided.")
-                        continue
-                        
-                    # T002: Strict ISRC Lookup
-                    tidal_track = tidal_service.get_track_by_isrc(tidal_session, isrc)
                     
-                    if tidal_track:
-                        tidal_tracks_to_add.append(tidal_track)
-                        logging.info(f"  + Resolved: {tidal_track.name} by {tidal_track.artist.name}")
-                    else:
-                        # T009: Robust Logging for 404s
-                        logging.warning(f"  - ISRC Not Found in Tidal ({isrc}): {item.get('title')} by {item.get('artist')}")
+                    found_track = None
+
+                    # Attempt 1: ISRC Lookup (if provided)
+                    if isrc:
+                        found_track = tidal_service.get_track_by_isrc(tidal_session, isrc)
+                        if found_track:
+                             logging.info(f"  + Resolved via ISRC ({isrc}): {found_track.name} by {found_track.artist.name}")
+
+                    # Attempt 2: Fallback to String Search
+                    if not found_track:
+                        if isrc:
+                            logging.warning(f"  - ISRC Lookup Failed ({isrc}). Falling back to search for: '{track_title}' by '{artist_name}'")
+                        
+                        # Construct a mock object to satisfy search_for_track's interface (expects object with artist.name and title/name)
+                        class SearchQuery:
+                            def __init__(self, a, t):
+                                self.artist = type('obj', (object,), {'name': a})
+                                self.title = t
+                        
+                        search_query = SearchQuery(artist_name, track_title)
+                        found_track = tidal_service.search_for_track(tidal_session, search_query)
+                        
+                        if found_track:
+                            logging.info(f"  + Resolved via Search: {found_track.name} by {found_track.artist.name}")
+                        else:
+                            logging.warning(f"  - Search Failed: '{track_title}' by '{artist_name}'")
+
+                    if found_track:
+                        tidal_tracks_to_add.append(found_track)
                         
                 except Exception as e:
                     logging.error(f"Error processing item {item}: {e}")
