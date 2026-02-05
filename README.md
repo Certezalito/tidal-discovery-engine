@@ -20,7 +20,7 @@ A command-line tool that generates a new Tidal playlist with Last.fm recommended
 
 This tool has two main modes of operation and a shuffle modifier that can be combined with either mode.  Use `--folder` to put the generated playlists into a folder (folder will be made if it doesn't exist)
 
-### Mode 1: Generate from Your Favorite Tracks
+### Mode 1: Last.fm Powerered Recomendations
 
 This is the default mode. The script will select a random number of tracks from your "Favorite Tracks" on Tidal and use them as seeds to find similar music.
 
