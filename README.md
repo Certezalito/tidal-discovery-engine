@@ -26,7 +26,14 @@ This is the default mode. The script will select a random number of tracks from 
 
 **Example:**
 ```bash
-uv run python -m src.cli.main --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}"
+uv run python -m src.cli.main --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}" --folder "Tidal Discovery Engine"
+```
+
+#### Modifier: Adding Variety with Shuffle
+For deeper cuts: You can add the `--shuffle` flag. This tells the script to fetch a large pool of similar tracks (up to 1000 per seed) and then randomly select the number specified by `--num-similar-tracks`.
+
+```bash
+uv run python -m src.cli.main --shuffle --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}" --folder "Tidal Discovery Engine"
 ```
 
 
@@ -39,12 +46,12 @@ Use Google Gemini AI to generate recommendations instead of the standard algorit
 
 **Example (Standard AI):**
 ```bash
-uv run python -m src.cli.main --gemini --playlist-name "AI Hits"
+uv run python -m src.cli.main --gemini --playlist-name "TDE Gemini Hits" --folder "Tidal Discovery Engine"
 ```
 
 **Example (AI Deep Cuts):**
 ```bash
-uv run python -m src.cli.main --gemini --shuffle --playlist-name "AI Underground"
+uv run python -m src.cli.main --gemini --shuffle --playlist-name "TDE Gemini Underground" --folder "Tidal Discovery Engine"
 ```
 
 ### Mode 3: Generate from a Single Seed Track
@@ -53,17 +60,7 @@ You can also generate a playlist based on a single, specific song. This is perfe
 
 **Example:**
 ```bash
-uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --num-similar-tracks 1000 --playlist-name "Gamemaster Vibes"
-```
-
-
-### Modifier: Deeper cuts: Adding Variety with Shuffle
-
-For either of the modes above, you can add the `--shuffle` flag. This tells the script to fetch a large pool of similar tracks (up to 1000 per seed) and then randomly select the number specified by `--num-similar-tracks`. This is a great way to discover less obvious recommendations.
-
-**Example (Mode 1 + Shuffle):**
-```bash
-uv run python -m src.cli.main --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE Shuffle {date}" --shuffle
+uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --num-similar-tracks 1000 --playlist-name "Gamemaster Vibes" --folder "Tidal Discovery Engine"
 ```
 
 
