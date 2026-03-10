@@ -3,11 +3,119 @@ import logging
 from pydantic import BaseModel
 from google import genai
 from google.genai import types
+from dotenv import dotenv_values
+
+
+DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+_DEFAULT_WARNING_EMITTED = False
 
 class Song(BaseModel):
     artist: str
     title: str
     isrc: str | None = None  # Make ISRC optional
+
+
+def _normalize_model_name(value):
+    if value is None:
+        return None
+
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _read_dotenv_values():
+    try:
+        return dotenv_values(".env")
+    except Exception as exc:
+        logging.warning(f"Unable to read .env for Gemini model configuration: {exc}")
+        return {}
+
+
+def _resolve_from_env_then_dotenv(key, dotenv_config):
+    env_value = os.environ.get(key)
+    if env_value is not None:
+        return env_value, "env"
+
+    dotenv_value = dotenv_config.get(key)
+    if dotenv_value is not None:
+        return dotenv_value, "dotenv"
+
+    return None, "default"
+
+
+def _resolve_primary_model(dotenv_config):
+    global _DEFAULT_WARNING_EMITTED
+
+    raw_value, source = _resolve_from_env_then_dotenv("GEMINI_MODEL", dotenv_config)
+    normalized = _normalize_model_name(raw_value)
+
+    if normalized:
+        return normalized, source
+
+    if not _DEFAULT_WARNING_EMITTED:
+        logging.warning(
+            "GEMINI_MODEL is missing or blank; using default model '%s' for this CLI invocation.",
+            DEFAULT_GEMINI_MODEL,
+        )
+        _DEFAULT_WARNING_EMITTED = True
+
+    return DEFAULT_GEMINI_MODEL, "default"
+
+
+def _resolve_fallback_model(dotenv_config):
+    raw_value, _ = _resolve_from_env_then_dotenv("GEMINI_FALLBACK_MODEL", dotenv_config)
+    return _normalize_model_name(raw_value)
+
+
+def _classify_client_error(error):
+    message = str(error).lower()
+
+    if "model" in message and ("not found" in message or "unavailable" in message):
+        return "unavailable/not-found", True
+    if "permission" in message or "forbidden" in message:
+        return "permission", False
+    if "quota" in message or "rate limit" in message or "resource exhausted" in message:
+        return "quota", False
+    if "api key" in message or "unauthorized" in message or "authentication" in message or "auth" in message:
+        return "auth", False
+
+    return "client", False
+
+
+def _build_actionable_error(model_id, category, error):
+    guidance = {
+        "unavailable/not-found": "Verify GEMINI_MODEL or GEMINI_FALLBACK_MODEL and ensure the model is available to your account.",
+        "auth": "Verify GEMINI_API_KEY and account authentication settings.",
+        "quota": "Check Gemini quota/rate limits and retry later.",
+        "permission": "Verify account permissions for the configured model.",
+        "client": "Review request configuration and model identifiers.",
+    }
+
+    return (
+        f"Gemini request failed. model='{model_id}', category='{category}', "
+        f"details='{error}'. Next step: {guidance.get(category, guidance['client'])}"
+    )
+
+
+def _generate_recommendations_with_model(client, model_name, full_prompt):
+    response = client.models.generate_content(
+        model=model_name,
+        contents=full_prompt,
+        config=types.GenerateContentConfig(
+            temperature=1,
+            top_p=0.95,
+            top_k=64,
+            max_output_tokens=8192,
+            response_mime_type='application/json',
+            response_schema=list[Song]
+        )
+    )
+
+    if response.parsed:
+        return [req.model_dump() for req in response.parsed]
+
+    logging.warning("Gemini returned empty parsed response for model '%s'.", model_name)
+    return []
 
 def get_recommendations(api_key, seed_tracks, count, shuffle=False):
     """
@@ -71,31 +179,46 @@ def get_recommendations(api_key, seed_tracks, count, shuffle=False):
 
     logging.info(f"Gemini Service: specific prompt style={'Deep Cuts' if shuffle else 'Standard'}")
 
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=full_prompt,
-            config=types.GenerateContentConfig(
-                temperature=1,
-                top_p=0.95,
-                top_k=64,
-                max_output_tokens=8192,
-                response_mime_type='application/json',
-                response_schema=list[Song]
-            )
-        )
-        
-        # Parse Pydantic Response
-        if response.parsed:
-            # Convert Pydantic models to dicts
-            return [req.model_dump() for req in response.parsed]
-        else:
-            logging.warning("Gemini returned empty parsed response.")
-            return []
+    dotenv_config = _read_dotenv_values()
+    primary_model, model_source = _resolve_primary_model(dotenv_config)
+    fallback_model = _resolve_fallback_model(dotenv_config)
+    logging.info(
+        "Gemini model resolution: primary='%s' source=%s fallback=%s",
+        primary_model,
+        model_source,
+        fallback_model if fallback_model else "none",
+    )
 
-    except genai.errors.ClientError as e:
-        logging.error(f"Gemini Client Error (Auth/Invalid Request): {e}")
-        raise ValueError(f"Gemini API Client Error: {e}") from e
+    try:
+        return _generate_recommendations_with_model(client, primary_model, full_prompt)
+
+    except genai.errors.ClientError as primary_error:
+        category, can_use_fallback = _classify_client_error(primary_error)
+
+        if can_use_fallback and fallback_model and fallback_model != primary_model:
+            logging.warning(
+                "Primary model '%s' unavailable; attempting fallback model '%s'.",
+                primary_model,
+                fallback_model,
+            )
+            try:
+                return _generate_recommendations_with_model(client, fallback_model, full_prompt)
+            except genai.errors.ClientError as fallback_error:
+                fallback_category, _ = _classify_client_error(fallback_error)
+                message = _build_actionable_error(fallback_model, fallback_category, fallback_error)
+                logging.error(message)
+                raise ValueError(message) from fallback_error
+            except genai.errors.ServerError as fallback_server_error:
+                logging.error(f"Gemini Server Error on fallback model '{fallback_model}': {fallback_server_error}")
+                return []
+            except Exception as fallback_unexpected_error:
+                logging.error(f"Gemini Unexpected Error on fallback model '{fallback_model}': {fallback_unexpected_error}")
+                return []
+
+        message = _build_actionable_error(primary_model, category, primary_error)
+        logging.error(message)
+        raise ValueError(message) from primary_error
+
     except genai.errors.ServerError as e:
         logging.error(f"Gemini Server Error: {e}")
         return []

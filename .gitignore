@@ -7,8 +7,18 @@ dist/
 *.egg-info/
 
 # Environment
-.env*
+.env
 tidal_session.json
 
 # Logs
 *.log
+
+# Tooling and OS
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.idea/
