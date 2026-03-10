@@ -12,7 +12,12 @@ A command-line tool that generates a new Tidal playlist with Last.fm recommended
     ```
     LASTFM_API_KEY=your_api_key
     GEMINI_API_KEY=your_key
+    GEMINI_MODEL=
+    GEMINI_FALLBACK_MODEL=
     ```
+
+    - `GEMINI_MODEL` is optional. Resolution order is: exported environment variable -> `.env` value -> built-in default.
+    - `GEMINI_FALLBACK_MODEL` is optional and only used when the configured primary model is unavailable/not found.
 
 5.  Run the script once interactively to authenticate with Tidal. This will create a `tidal_session.json` file in the root of the project, which will be used for all future non-interactive runs.
 
@@ -42,6 +47,7 @@ uv run python -m src.cli.main --shuffle --num-tidal-tracks 5 --num-similar-track
 Use Google Gemini AI to generate recommendations instead of the standard algorithm. 
 - **Standard**: Generates popular/highly relevant suggestions.
 - **With Shuffle**: Generates "Deep Cuts", underground, and lesser-known tracks.
+- **Missing/blank model config**: logs one warning per CLI invocation and uses the built-in default model.
 
 
 **Example (Standard AI):**
@@ -53,6 +59,17 @@ uv run python -m src.cli.main --gemini --playlist-name "TDE Gemini Hits" --folde
 ```bash
 uv run python -m src.cli.main --gemini --shuffle --playlist-name "TDE Gemini Underground" --folder "Tidal Discovery Engine"
 ```
+
+**Example (runtime model override):**
+```bash
+export GEMINI_MODEL=gemini-2.0-flash
+uv run python -m src.cli.main --gemini --playlist-name "TDE Gemini Override" --folder "Tidal Discovery Engine"
+```
+
+**Gemini error/fallback behavior:**
+- Fallback is attempted only when the primary model is unavailable/not found and `GEMINI_FALLBACK_MODEL` is configured.
+- Auth/quota/permission failures do not trigger fallback.
+- Actionable error output includes failing model ID, failure category, and corrective guidance.
 
 ### Mode 3: Generate from a Single Seed Track
 
