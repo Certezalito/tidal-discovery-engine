@@ -83,10 +83,11 @@ def create_playlist(session, name, num_tidal_tracks, num_similar_tracks, seed_tr
         no_similar_tracks_list = " | ".join([f"{t.title} by {t.artist.name}" for t in no_similar_tracks_seeds])
         no_similar_tracks_summary = f" No similar tracks found for: {no_similar_tracks_list}."
 
+    track_ids = [t.id for t in tracks] if tracks else []
     description = (
         f"Generated on {run_date}. "
         f"Based on {num_tidal_tracks} seed tracks: {seed_track_list}. "
-        f"Found {num_similar_tracks} similar tracks for each via Last.fm."
+        f"Inserted {len(track_ids)} tracks into this playlist."
         f"{genre_mix_summary}"
         f"{no_similar_tracks_summary}"
     )
@@ -94,8 +95,6 @@ def create_playlist(session, name, num_tidal_tracks, num_similar_tracks, seed_tr
     # Truncate the description if it's too long
     if len(description) > 500:
         description = description[:497] + "..."
-        
-    track_ids = [t.id for t in tracks] if tracks else []
 
     if folder_id:
         return create_playlist_in_folder(session, name, description, folder_id, track_ids=track_ids)
@@ -114,6 +113,40 @@ def search_for_track(session, track):
         return tracks[0]
         
     return None
+
+def resolve_text_seed_track(session, artist_name, track_name):
+    """
+    Resolve a best-effort seed track object for Gemini context in single-seed mode.
+
+    Returns the first exact match when available. If no exact match exists but search
+    results are present, returns the first candidate and marks it ambiguous.
+    If no results are found, returns a text-only placeholder object.
+    """
+    search_query = f"{artist_name} {track_name}"
+    search_results = session.search(search_query, limit=50)
+    tracks = search_results.get("tracks", []) if search_results else []
+
+    normalized_artist = artist_name.strip().lower()
+    normalized_track = track_name.strip().lower()
+
+    for track in tracks:
+        track_artist = track.artist.name.strip().lower() if getattr(track, "artist", None) else ""
+        track_title = track.name.strip().lower() if getattr(track, "name", None) else ""
+        if track_artist == normalized_artist and track_title == normalized_track:
+            return track, "exact"
+
+    if tracks:
+        return tracks[0], "ambiguous"
+
+    placeholder_track = type(
+        "TextSeedTrack",
+        (),
+        {
+            "artist": type("Artist", (), {"name": artist_name})(),
+            "name": track_name,
+        },
+    )()
+    return placeholder_track, "text_only"
 
 def get_or_create_folder(session, folder_name):
     """

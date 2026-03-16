@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import MagicMock, patch
-from src.services.tidal_service import get_or_create_folder, create_playlist_in_folder, search_for_track
+from src.services.tidal_service import get_or_create_folder, create_playlist_in_folder, search_for_track, create_playlist
 from tidalapi.exceptions import ObjectNotFound
 from requests.exceptions import HTTPError
 
@@ -231,6 +231,38 @@ class TestTidalServiceFolders(unittest.TestCase):
         # Assert
         # Verify it called with parent_id='root' eventually
         self.mock_user.create_playlist.assert_called_with("Name", "Desc", parent_id="root")
+
+
+class TestTidalServicePlaylistDescription(unittest.TestCase):
+    def test_create_playlist_description_uses_inserted_count_without_requested_phrase(self):
+        mock_session = MagicMock()
+        mock_playlist = MagicMock()
+        mock_session.user.create_playlist.return_value = mock_playlist
+
+        seed = MagicMock()
+        seed.title = "Xpander"
+        seed.artist.name = "Sasha"
+
+        inserted_a = MagicMock(); inserted_a.id = "1"
+        inserted_b = MagicMock(); inserted_b.id = "2"
+        inserted_c = MagicMock(); inserted_c.id = "3"
+
+        create_playlist(
+            session=mock_session,
+            name="My Playlist",
+            num_tidal_tracks=1,
+            num_similar_tracks=500,
+            seed_tracks=[seed],
+            final_tags=[],
+            tracks=[inserted_a, inserted_b, inserted_c],
+        )
+
+        args, _ = mock_session.user.create_playlist.call_args
+        description = args[1]
+
+        self.assertIn("Inserted 3 tracks into this playlist.", description)
+        self.assertNotIn("Requested up to 500 recommendations.", description)
+        self.assertNotIn("Found 500 similar tracks for each via Last.fm.", description)
 
 if __name__ == '__main__':
     unittest.main()

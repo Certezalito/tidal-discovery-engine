@@ -9,10 +9,38 @@ from dotenv import dotenv_values
 DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
 _DEFAULT_WARNING_EMITTED = False
 
+
+class GeminiModelUnavailableError(ValueError):
+    """Raised when the configured Gemini model is unavailable or not found."""
+
 class Song(BaseModel):
     artist: str
     title: str
     isrc: str | None = None  # Make ISRC optional
+
+
+def _normalize_seed_track(track):
+    artist_obj = getattr(track, "artist", None)
+    artist_name = getattr(artist_obj, "name", None)
+    title = getattr(track, "name", None) or getattr(track, "title", None)
+
+    normalized_artist = str(artist_name).strip() if artist_name else "Unknown Artist"
+    normalized_title = str(title).strip() if title else "Unknown Title"
+    return {"artist": normalized_artist, "title": normalized_title}
+
+
+def _build_seed_descriptions(seed_tracks):
+    descriptions = []
+    for track in seed_tracks:
+        normalized = _normalize_seed_track(track)
+        descriptions.append(f"- {normalized['artist']} - {normalized['title']}")
+    return descriptions
+
+
+def _cap_recommendations(recommendations, count):
+    if count <= 0:
+        return []
+    return recommendations[:count]
 
 
 def _normalize_model_name(value):
@@ -138,30 +166,24 @@ def get_recommendations(api_key, seed_tracks, count, shuffle=False):
         raise ValueError("Invalid Gemini API Configuration") from e
 
     # Construct Seed List
-    seed_descriptions = []
-    for t in seed_tracks:
-        artist = t.artist.name if hasattr(t, 'artist') else "Unknown Artist"
-        title = t.name if hasattr(t, 'name') else (t.title if hasattr(t, 'title') else "Unknown Title")
-        seed_descriptions.append(f"- {artist} - {title}")
-    
+    seed_descriptions = _build_seed_descriptions(seed_tracks)
     seeds_text = "\n".join(seed_descriptions)
 
     # Prompt Construction
     base_instruction = (
         f"I will provide a list of {len(seed_tracks)} songs I like. "
-        f"Please generate a list of exactly {count} NEW song recommendations based on this taste profile."
+        f"Please generate a list of up to {count} NEW song recommendations based on this taste profile."
     )
 
-    style_instruction = ""
     if shuffle:
-        # Deep Cuts Logic
+        # Deep-cuts intent
         style_instruction = (
             "STYLE: I am looking for 'Deep Cuts'. "
             "Please ignore popular hits. Focus on lesser-known, underground, "
             "or B-side tracks that share the vibe/genre of the seeds but are not mainstream."
         )
     else:
-        # Standard Logic
+        # Standard intent
         style_instruction = (
             "STYLE: Please find popular or highly-rated songs that match the vibe of the seeds. "
             "Focus on high relevance."
@@ -190,7 +212,8 @@ def get_recommendations(api_key, seed_tracks, count, shuffle=False):
     )
 
     try:
-        return _generate_recommendations_with_model(client, primary_model, full_prompt)
+        generated = _generate_recommendations_with_model(client, primary_model, full_prompt)
+        return _cap_recommendations(generated, count)
 
     except genai.errors.ClientError as primary_error:
         category, can_use_fallback = _classify_client_error(primary_error)
@@ -202,7 +225,8 @@ def get_recommendations(api_key, seed_tracks, count, shuffle=False):
                 fallback_model,
             )
             try:
-                return _generate_recommendations_with_model(client, fallback_model, full_prompt)
+                generated = _generate_recommendations_with_model(client, fallback_model, full_prompt)
+                return _cap_recommendations(generated, count)
             except genai.errors.ClientError as fallback_error:
                 fallback_category, _ = _classify_client_error(fallback_error)
                 message = _build_actionable_error(fallback_model, fallback_category, fallback_error)
@@ -217,6 +241,8 @@ def get_recommendations(api_key, seed_tracks, count, shuffle=False):
 
         message = _build_actionable_error(primary_model, category, primary_error)
         logging.error(message)
+        if can_use_fallback and (not fallback_model or fallback_model == primary_model):
+            raise GeminiModelUnavailableError(message) from primary_error
         raise ValueError(message) from primary_error
 
     except genai.errors.ServerError as e:

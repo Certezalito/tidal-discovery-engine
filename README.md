@@ -1,6 +1,6 @@
 # Tidal Discovery Engine
 
-A command-line tool that generates a new Tidal playlist with Last.fm recommended tracks based on a selection of your favorite tracks from Tidal.
+A command-line tool that generates a new Tidal playlist with Last.fm recommended tracks based on a random selection of your favorite tracks from Tidal.
 
 ## Setup
 
@@ -80,6 +80,24 @@ You can also generate a playlist based on a single, specific song. This is perfe
 uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --num-similar-tracks 1000 --playlist-name "Gamemaster Vibes" --folder "Tidal Discovery Engine"
 ```
 
+**Example (Gemini Mode 3):**
+```bash
+uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --gemini --num-similar-tracks 20 --playlist-name "Gamemaster Gemini" --folder "Tidal Discovery Engine"
+```
+
+**Example (Gemini Mode 3 Deep Cuts):**
+```bash
+uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --gemini --shuffle --num-similar-tracks 20 --playlist-name "Gamemaster Gemini Deep Cuts" --folder "Tidal Discovery Engine"
+```
+
+**Mode 3 Gemini notes:**
+- `--artist` and `--track` must be provided together.
+- `--num-similar-tracks` must be a positive integer.
+- If Gemini model errors are specifically unavailable/not-found in Mode 3, the CLI falls back to Last.fm for the same single seed.
+- Auth/quota/permission Gemini failures do not fallback and return actionable errors.
+- Unresolved Tidal insertions are skipped and reported as a warning with skipped count and a preview of up to 5 names.
+- If zero tracks can be inserted after resolution, the run fails.
+
 
 
 ### All Parameters
@@ -88,7 +106,7 @@ uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --num-s
 | ---------------------- | ---------------------------------------------------------------------------------------------------------- | ------- | -------- |
 | `--num-tidal-tracks`   | (Mode 1) The number of random favorite tracks to select from Tidal to use as seeds.                          | `10`    | No       |
 | `--num-similar-tracks` | The number of similar tracks to retrieve (per seed).                                 | `5`     | No       |
-| `--gemini`             | (Mode 2) Use Google Gemini AI for recommendations instead of Last.fm.                                        | `False` | No       |
+| `--gemini`             | (Mode 2 and Mode 3) Use Google Gemini AI for recommendations instead of Last.fm.                             | `False` | No       |
 | `--shuffle`            | (Last.fm) Larger pool. (Gemini) Deep Cuts / underground tracks.                                            | `False` | No       |
 | `--artist`             | (Mode 3) The artist of a specific track to use as a seed. Must be used with `--track`.                       |         | No       |
 | `--track`              | (Mode 3) The title of a specific track to use as a seed. Must be used with `--artist`.                      |         | No       |
