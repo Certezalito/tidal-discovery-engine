@@ -1,35 +1,55 @@
 <!--
 Sync Impact Report:
-- **Version Change**: 1.0.0 → 1.1.0
+- **Version Change**: 1.1.0 → 1.2.0
 - **Modified Principles**:
-  - Quality Gates: Added requirement for end-user documentation updates.
+  - I. User-Centricity → I. User-Centricity & Understandability
+  - Technical Standards & Workflow / Quality Gates: Clarified documentation scope and readability expectations.
 - **Added Sections**: None
-- **Templates requiring updates**: 
-  - .specify/templates/plan-template.md (⚠ pending - check "Constitution Check" section logic)
-  - .specify/templates/spec-template.md (⚠ pending - might need explicit docs section)
-- **Follow-up TODOs**: Review templates to ensure docs task is default.
+- **Removed Sections**: None
+- **Templates requiring updates**:
+  - .specify/templates/plan-template.md (✅ updated)
+  - .specify/templates/spec-template.md (✅ updated)
+  - .specify/templates/tasks-template.md (✅ updated)
+  - .specify/templates/commands/*.md (✅ no directory present; no command templates to update)
+- **Follow-up TODOs**: None
 -->
 # Tidal Discovery Engine Constitution
 
 ## Core Principles
 
-### I. User-Centricity
-The project will prioritize a simple and intuitive command-line interface (CLI) that allows for easy configuration and operation. Configuration should be minimal and usage straightforward for end-users.
+### I. User-Centricity & Understandability
+The project MUST prioritize a simple and intuitive command-line interface (CLI) and
+supporting documentation that is easy to understand for end-users. Configuration
+MUST remain minimal, usage MUST be straightforward, and every feature change MUST
+include clear usage examples and behavior notes in end-user documentation.
+
+Rationale: Users can only benefit from automation when behavior is discoverable and
+explainable without source-code inspection.
 
 ### II. Automation
-The core value lies in automating the process of finding new music and creating playlists, saving the user time and effort. Workflows should be designed to run without manual intervention once configured (e.g., support for schedulers/cron).
+The core value lies in automating the process of finding new music and creating
+playlists, saving the user time and effort. Workflows MUST be designed to run
+without manual intervention once configured (for example, scheduler/cron usage).
 
 ### III. Personalization
-By starting with the user's favorite tracks, the generated playlists will be tailored to their specific musical tastes. Algorithms and integrations must respect and leverage user data to maximize relevance.
+By starting with the user's favorite tracks, generated playlists MUST be tailored to
+specific musical tastes. Algorithms and integrations MUST respect and leverage user
+data to maximize relevance.
 
 ### IV. Extensibility
-The project will be built with a modular design to potentially accommodate other music services or recommendation engines in the future. Code should be loosely coupled and interfaces clearly defined.
+The project MUST use a modular design so other music services or recommendation
+engines can be accommodated in the future. Code MUST remain loosely coupled and
+interfaces MUST be clearly defined.
 
 ### V. Reliability
-The application will be robust, with proper error handling and logging to ensure consistent and predictable behavior, especially when running as a scheduled task. Failures should be handled gracefully and logged for diagnosis.
+The application MUST include robust error handling and logging to ensure consistent,
+predictable behavior, especially when running as a scheduled task. Failures MUST be
+handled gracefully and logged for diagnosis.
 
 ## Mission
-To create a personalized music discovery tool that seamlessly integrates with a user's Tidal library, leverages Last.fm's recommendation engine, and automates the creation of new playlists to enrich the user's listening experience.
+To create a personalized music discovery tool that seamlessly integrates with a
+user's Tidal library, leverages Last.fm's recommendation engine, and automates
+the creation of new playlists to enrich the user's listening experience.
 
 ## Technical Standards & Workflow
 
@@ -41,12 +61,37 @@ To create a personalized music discovery tool that seamlessly integrates with a 
 - **Logging**: Python `logging` module (stdout + file)
 
 **Quality Gates:**
-- All features must include error handling suitable for unattended execution.
-- Code must adhere to modular design principles to support the Extensibility principle.
-- All dependencies must be managed via `uv`.
-- **Documentation**: End-user documentation (README, Quickstart) MUST be updated immediately when new features are added or existing behaviors change.
+- All features MUST include error handling suitable for unattended execution.
+- Code MUST adhere to modular design principles to support the Extensibility
+  principle.
+- All dependencies MUST be managed via `uv`.
+- **Documentation**: Every feature MUST include end-user documentation updates in
+  README and/or feature quickstart content when behaviors, flags, constraints,
+  or failure modes are added or changed.
+- **Understandability**: Documentation MUST explain what changed, how to use it,
+  expected outcomes, and failure handling in clear language with at least one
+  concrete command example.
 
 ## Governance
-This Constitution supersedes all other practices. Amendments require documentation, approval, and a corresponding version bump. All PRs and reviews must verify compliance with the Core Principles, particularly Reliability and Extensibility for new features.
+This Constitution supersedes all other practices.
 
-**Version**: 1.1.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-01-21
+Amendment Procedure:
+- Proposed constitutional changes MUST include rationale, impacted templates, and
+  migration notes where applicable.
+- Amendments MUST be approved through project review before merge.
+- Ratification date is immutable after first adoption; last amended date MUST be
+  updated on every approved change.
+
+Versioning Policy:
+- MAJOR: Backward-incompatible governance changes or principle removals/redefinitions.
+- MINOR: New principles/sections or materially expanded mandatory guidance.
+- PATCH: Clarifications, wording improvements, and typo fixes with no governance
+  behavior change.
+
+Compliance Review Expectations:
+- All PRs and reviews MUST verify compliance with Core Principles and Quality
+  Gates.
+- Reviewers MUST reject feature changes that lack documentation updates or fail
+  understandability checks.
+
+**Version**: 1.2.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-03-30

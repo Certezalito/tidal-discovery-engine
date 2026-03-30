@@ -95,6 +95,17 @@
 - **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
 - **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
 
+### Documentation & Understandability Requirements *(mandatory)*
+
+- **DR-001**: Feature specification MUST list all end-user documentation artifacts
+  that need updates (for example, README sections, quickstart steps, CLI examples).
+- **DR-002**: Every new or changed user-facing behavior MUST include plain-language
+  explanation and at least one concrete usage example.
+- **DR-003**: Error/failure scenarios exposed to users MUST include corrective
+  guidance text suitable for documentation.
+- **DR-004**: Terminology for options, modes, and outputs MUST remain consistent
+  across spec, quickstart, and README updates.
+
 ### Key Entities *(include if feature involves data)*
 
 - **[Entity 1]**: [What it represents, key attributes without implementation]

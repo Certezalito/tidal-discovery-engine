@@ -31,7 +31,18 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- [ ] **User-Centricity & Understandability**: Feature behavior is described in
+  user-facing terms, with planned README/quickstart updates and examples.
+- [ ] **Automation**: Flow supports unattended execution where applicable;
+  scheduler/cron considerations documented when relevant.
+- [ ] **Personalization**: User data inputs and expected relevance outcomes are
+  explicitly defined.
+- [ ] **Extensibility**: Modules/interfaces affected by the feature are identified
+  with clear boundaries.
+- [ ] **Reliability**: Error handling, fallback/edge-case behavior, and logging
+  expectations are captured.
+- [ ] **Documentation Quality Gate**: Plan includes concrete documentation tasks
+  for new/changed flags, constraints, and failure modes.
 
 ## Project Structure
 
