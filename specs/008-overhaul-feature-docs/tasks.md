@@ -21,8 +21,8 @@
 
 **Purpose**: Understand current state before writing any new content.
 
-- [ ] T001 Read and inventory all current top-level sections and their content in `README.md` — note what exists, what is outdated, and what can be preserved
-- [ ] T002 [P] Read `src/cli/main.py` and extract the authoritative list of all CLI options, their defaults, mode applicability, and required option pairs (source of truth for T009)
+- [x] T001 Read and inventory all current top-level sections and their content in `README.md` — note what exists, what is outdated, and what can be preserved
+- [x] T002 [P] Read `src/cli/main.py` and extract the authoritative list of all CLI options, their defaults, mode applicability, and required option pairs (source of truth for T009)
 
 ---
 
@@ -32,7 +32,7 @@
 
 **⚠️ CRITICAL**: No user story work (Phase 3+) can begin until T003 is done.
 
-- [ ] T003 Rewrite `README.md` top-level structure to exactly: Setup → Modes → All Parameters → Troubleshooting → Scheduling — preserve any reusable content under the correct section heading, remove or relocate misplaced content
+- [x] T003 Rewrite `README.md` top-level structure to exactly: Setup → Modes → All Parameters → Troubleshooting → Scheduling — preserve any reusable content under the correct section heading, remove or relocate misplaced content
 
 **Checkpoint**: README skeleton with correct section order exists — user story implementation can now begin
 
@@ -46,12 +46,12 @@
 
 ### Implementation for User Story 1
 
-- [ ] T004 [US1] Write the Setup section in `README.md`: prerequisites, environment variables, credential setup, session file location, and install/run commands — all steps must be verifiably runnable
-- [ ] T005 [P] [US1] Write the Mode 1 subsection in `README.md`: mode intent in plain language, two runnable command examples (one without `--shuffle` and one with `--shuffle`), and expected outcome statements for both paths [Spec §FR-002, §DR-002]
-- [ ] T006 [P] [US1] Write the Mode 2 subsection in `README.md`: mode intent in plain language, two runnable command examples using `--gemini` (one without `--shuffle` and one with `--shuffle`), and expected outcome statements for both paths [Spec §FR-002, §DR-002]
-- [ ] T007 [P] [US1] Write the Mode 3 subsection in `README.md`: mode intent, explicit statement that `--artist` AND `--track` are both required together, at least one runnable command example, and expected outcome statement [Spec §FR-002, §FR-003, §DR-002]
-- [ ] T008 [US1] Add a quick-start summary at the top of the Modes section in `README.md` covering the most common use case with a single concrete command (distinct from the detailed per-mode subsections) [Spec §FR-006]
-- [ ] T009 [US1] Write the All Parameters section in `README.md` as the single authoritative option reference: every option with purpose, default, mode applicability, and required pairings — no option defaults or constraints defined anywhere else in README [Spec §FR-005]
+- [x] T004 [US1] Write the Setup section in `README.md`: prerequisites, environment variables, credential setup, session file location, and install/run commands — all steps must be verifiably runnable
+- [x] T005 [P] [US1] Write the Mode 1 subsection in `README.md`: mode intent in plain language, two runnable command examples (one without `--shuffle` and one with `--shuffle`), and expected outcome statements for both paths [Spec §FR-002, §DR-002]
+- [x] T006 [P] [US1] Write the Mode 2 subsection in `README.md`: mode intent in plain language, two runnable command examples using `--gemini` (one without `--shuffle` and one with `--shuffle`), and expected outcome statements for both paths [Spec §FR-002, §DR-002]
+- [x] T007 [P] [US1] Write the Mode 3 subsection in `README.md`: mode intent, explicit statement that `--artist` AND `--track` are both required together, at least one runnable command example, and expected outcome statement [Spec §FR-002, §FR-003, §DR-002]
+- [x] T008 [US1] Add a quick-start summary at the top of the Modes section in `README.md` covering the most common use case with a single concrete command (distinct from the detailed per-mode subsections) [Spec §FR-006]
+- [x] T009 [US1] Write the All Parameters section in `README.md` as the single authoritative option reference: every option with purpose, default, mode applicability, and required pairings — no option defaults or constraints defined anywhere else in README [Spec §FR-005]
 
 **Checkpoint**: User Story 1 complete — a user can read the Modes + All Parameters sections and execute a valid command for each mode
 
@@ -65,9 +65,9 @@
 
 ### Implementation for User Story 2
 
-- [ ] T010 [US2] Write the Troubleshooting entry for Gemini model-unavailable error in `README.md`: observed symptoms, behavioral explanation, explicit fallback-or-no-fallback statement, and corrective action the user can take [Spec §FR-004, §DR-003]
-- [ ] T011 [P] [US2] Write the Troubleshooting entry for Mode 3 missing required option pair in `README.md`: observed symptoms, explanation that both `--artist` and `--track` must be provided together, and a corrected command example as corrective action [Spec §FR-004, §FR-003]
-- [ ] T012 [P] [US2] Write the Troubleshooting entry for authentication or quota failure in `README.md`: observed symptoms, explanation of the fallback boundary (auth/quota errors do NOT trigger fallback), and corrective action [Spec §FR-004, §DR-003]
+- [x] T010 [US2] Write the Troubleshooting entry for Gemini model-unavailable error in `README.md`: observed symptoms, behavioral explanation, explicit fallback-or-no-fallback statement, and corrective action the user can take [Spec §FR-004, §DR-003]
+- [x] T011 [P] [US2] Write the Troubleshooting entry for Mode 3 missing required option pair in `README.md`: observed symptoms, explanation that both `--artist` and `--track` must be provided together, and a corrected command example as corrective action [Spec §FR-004, §FR-003]
+- [x] T012 [P] [US2] Write the Troubleshooting entry for authentication or quota failure in `README.md`: observed symptoms, explanation of the fallback boundary (auth/quota errors do NOT trigger fallback), and corrective action [Spec §FR-004, §DR-003]
 
 **Checkpoint**: User Story 2 complete — Troubleshooting section has ≥ 2 structured prose entries covering failure and fallback scenarios
 
@@ -81,10 +81,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T013 [US3] Write the Scheduling section in `README.md`: unattended execution guidance and at least one concrete scheduler command example (e.g., cron) [Spec §FR-001, §DR-002]
-- [ ] T014 [US3] Audit entire `README.md` for consistent terminology — verify canonical terms for Mode 1/2/3, all flag names (e.g., `--gemini`, `--shuffle`, `--artist`, `--track`), and outcomes (deep cuts, fallback) are used identically across every section [Spec §FR-007, §DR-004]
-- [ ] T015 [P] [US3] Open `specs/008-overhaul-feature-docs/checklists/docs-update.md` and verify all 18 checklist items (DOC-001–DOC-018) map accurately to the final README sections — update any item that references a section title or concept that changed during implementation [Spec §DR-005]
-- [ ] T016 [US3] Make a final pass on `README.md`: confirm top-level section order is exactly Setup → Modes → All Parameters → Troubleshooting → Scheduling, no section duplicates normative guidance owned by another section, and zero contradictory statements exist [Spec §FR-001, §SC-003, §DR-004]
+- [x] T013 [US3] Write the Scheduling section in `README.md`: unattended execution guidance and at least one concrete scheduler command example (e.g., cron) [Spec §FR-001, §DR-002]
+- [x] T014 [US3] Audit entire `README.md` for consistent terminology — verify canonical terms for Mode 1/2/3, all flag names (e.g., `--gemini`, `--shuffle`, `--artist`, `--track`), and outcomes (deep cuts, fallback) are used identically across every section [Spec §FR-007, §DR-004]
+- [x] T015 [P] [US3] Open `specs/008-overhaul-feature-docs/checklists/docs-update.md` and verify all 18 checklist items (DOC-001–DOC-018) map accurately to the final README sections — update any item that references a section title or concept that changed during implementation [Spec §DR-005]
+- [x] T016 [US3] Make a final pass on `README.md`: confirm top-level section order is exactly Setup → Modes → All Parameters → Troubleshooting → Scheduling, no section duplicates normative guidance owned by another section, and zero contradictory statements exist [Spec §FR-001, §SC-003, §DR-004]
 
 **Checkpoint**: All three user stories complete — README is structured, consistent, and the maintainer checklist is validated
 
@@ -94,11 +94,11 @@
 
 **Purpose**: Final validation against acceptance criteria and peer review gate.
 
-- [ ] T017 [P] Run all six validation steps in `specs/008-overhaul-feature-docs/quickstart.md` against the updated `README.md` and confirm each expected result is met
-- [ ] T020 [US3] Perform an explicit contradiction audit between `README.md` and `specs/008-overhaul-feature-docs/quickstart.md` for mode names, option names, defaults/constraints, and fallback behavior; document pass/fail and required corrections before reviewer sign-off [Spec §SC-003]
+- [x] T017 [P] Run all six validation steps in `specs/008-overhaul-feature-docs/quickstart.md` against the updated `README.md` and confirm each expected result is met
+- [x] T020 [US3] Perform an explicit contradiction audit between `README.md` and `specs/008-overhaul-feature-docs/quickstart.md` for mode names, option names, defaults/constraints, and fallback behavior; document pass/fail and required corrections before reviewer sign-off [Spec §SC-003]
 - [ ] T018 Obtain peer review sign-off from maintainer reviewer #1 in `specs/008-overhaul-feature-docs/checklists/docs-update.md` DOC-017: confirms command-path clarity for all modes
 - [ ] T019 [P] Obtain peer review sign-off from maintainer reviewer #2 in `specs/008-overhaul-feature-docs/checklists/docs-update.md` DOC-018: confirms absence of contradictory guidance and troubleshooting completeness
-- [ ] T021 [US3] Record the SC-004 follow-up gate in `specs/008-overhaul-feature-docs/checklists/docs-update.md` notes: on the next feature PR, maintainer reviewer #1 must verify checklist completion evidence and section updates before merge [Spec §SC-004, §DR-005]
+- [x] T021 [US3] Record the SC-004 follow-up gate in `specs/008-overhaul-feature-docs/checklists/docs-update.md` notes: on the next feature PR, maintainer reviewer #1 must verify checklist completion evidence and section updates before merge [Spec §SC-004, §DR-005]
 
 ---
 

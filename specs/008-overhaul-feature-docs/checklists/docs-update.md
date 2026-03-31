@@ -33,3 +33,13 @@
 
 - [ ] DOC-017 Reviewed and approved by maintainer reviewer #1 — confirms command-path clarity for all modes
 - [ ] DOC-018 Reviewed and approved by maintainer reviewer #2 — confirms absence of contradictory guidance and troubleshooting completeness
+
+## Notes
+
+**SC-004 Follow-Up Gate**: On the next feature PR that changes CLI behavior or adds new modes/options, maintainer reviewer #1 must verify:
+
+1. This checklist (DOC-001–DOC-018) has been completed with evidence of section updates.
+2. All affected README sections have been updated to reflect the new behavior.
+3. No contradictory guidance has been introduced between README sections or between README and quickstart.
+
+This gate applies to the **first subsequent feature addition** after the 008-overhaul-feature-docs work is merged [Spec §SC-004].
