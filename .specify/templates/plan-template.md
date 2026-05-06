@@ -17,7 +17,7 @@
   the iteration process.
 -->
 
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
+**Language/Version**: [e.g., Python 3.12, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
 **Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
 **Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
 **Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
@@ -33,6 +33,9 @@
 
 - [ ] **User-Centricity & Understandability**: Feature behavior is described in
   user-facing terms, with planned README/quickstart updates and examples.
+- [ ] **Evidence & Unknowns**: Unknown facts, defaults, and external capabilities
+  are identified with a plan to verify them from authoritative sources instead of
+  assuming values.
 - [ ] **Automation**: Flow supports unattended execution where applicable;
   scheduler/cron considerations documented when relevant.
 - [ ] **Personalization**: User data inputs and expected relevance outcomes are
@@ -41,6 +44,8 @@
   with clear boundaries.
 - [ ] **Reliability**: Error handling, fallback/edge-case behavior, and logging
   expectations are captured.
+- [ ] **Verifiability**: Targeted automated validation for each behavior-changing
+  path is identified before implementation.
 - [ ] **Documentation Quality Gate**: Plan includes concrete documentation tasks
   for new/changed flags, constraints, and failure modes.
 
