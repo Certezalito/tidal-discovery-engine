@@ -1,7 +1,16 @@
 import unittest
 from unittest.mock import MagicMock, patch
-from src.services.tidal_service import get_or_create_folder, create_playlist_in_folder, search_for_track, create_playlist
-from tidalapi.exceptions import ObjectNotFound
+from src.services.tidal_service import (
+    get_or_create_folder,
+    create_playlist_in_folder,
+    search_for_track,
+    create_playlist,
+    normalize_isrc,
+    get_track_identity_key,
+    build_favorites_snapshot,
+    filter_out_favorites,
+    FavoritesRetrievalError,
+)
 from requests.exceptions import HTTPError
 
 class TestTidalServiceSearch(unittest.TestCase):
@@ -115,7 +124,7 @@ class TestTidalServiceFolders(unittest.TestCase):
         self.mock_user.create_folder.side_effect = [HTTPError("503 Service Unavailable"), HTTPError("504 Gateway Timeout"), mock_new_folder]
 
         # Execute
-        with patch('time.sleep') as mock_sleep: # Speed up test
+        with patch('time.sleep'): # Speed up test
             result = get_or_create_folder(self.mock_session, folder_name)
 
         # Assert
@@ -143,7 +152,7 @@ class TestTidalServiceFolders(unittest.TestCase):
         self.mock_user.create_playlist.return_value = mock_new_playlist
         
         # Execute
-        result = create_playlist_in_folder(self.mock_session, playlist_name, "Desc", folder_id, track_ids)
+        create_playlist_in_folder(self.mock_session, playlist_name, "Desc", folder_id, track_ids)
         
         # Assert
         # Should create with original name
@@ -190,8 +199,10 @@ class TestTidalServiceFolders(unittest.TestCase):
         params_mock_folder_class.return_value = mock_folder_instance
         
         # Mock existing items (multiple collisions)
-        p1 = MagicMock(); p1.name = "My Playlist"
-        p2 = MagicMock(); p2.name = "My Playlist (1)"
+        p1 = MagicMock()
+        p1.name = "My Playlist"
+        p2 = MagicMock()
+        p2.name = "My Playlist (1)"
         mock_folder_instance.items.return_value = [p1, p2]
         
         mock_new_playlist = MagicMock()
@@ -225,7 +236,7 @@ class TestTidalServiceFolders(unittest.TestCase):
         self.mock_user.create_playlist.side_effect = side_effect
         
         # Execute
-        with patch('time.sleep') as mock_sleep:
+        with patch('time.sleep'):
             create_playlist_in_folder(self.mock_session, "Name", "Desc", folder_id, ["1"])
         
         # Assert
@@ -243,9 +254,12 @@ class TestTidalServicePlaylistDescription(unittest.TestCase):
         seed.title = "Xpander"
         seed.artist.name = "Sasha"
 
-        inserted_a = MagicMock(); inserted_a.id = "1"
-        inserted_b = MagicMock(); inserted_b.id = "2"
-        inserted_c = MagicMock(); inserted_c.id = "3"
+        inserted_a = MagicMock()
+        inserted_a.id = "1"
+        inserted_b = MagicMock()
+        inserted_b.id = "2"
+        inserted_c = MagicMock()
+        inserted_c.id = "3"
 
         create_playlist(
             session=mock_session,
@@ -263,6 +277,77 @@ class TestTidalServicePlaylistDescription(unittest.TestCase):
         self.assertIn("Inserted 3 tracks into this playlist.", description)
         self.assertNotIn("Requested up to 500 recommendations.", description)
         self.assertNotIn("Found 500 similar tracks for each via Last.fm.", description)
+
+
+class TestTidalServiceExclusion(unittest.TestCase):
+    def _track(self, title, artist, isrc=None):
+        track = MagicMock()
+        track.title = title
+        track.name = title
+        track.artist.name = artist
+        track.isrc = isrc
+        return track
+
+    def test_normalize_isrc_removes_noise_and_uppercases(self):
+        self.assertEqual(normalize_isrc(" us-a1b-23 00001 "), "USA1B2300001")
+
+    def test_identity_key_prefers_isrc(self):
+        track = self._track("Track", "Artist", isrc="us-a1b-23 00001")
+        self.assertEqual(get_track_identity_key(track), "isrc:USA1B2300001")
+
+    def test_identity_key_falls_back_to_title_artist(self):
+        track = self._track(" Teardrop ", " Massive Attack ", isrc=None)
+        self.assertEqual(get_track_identity_key(track), "fallback:teardrop|massive attack")
+
+    def test_build_favorites_snapshot_collects_identity_keys(self):
+        session = MagicMock()
+        page_1 = [self._track("Track A", "Artist A", isrc="USAAA00001")]
+        page_2 = [self._track("Track B", "Artist B", isrc=None)]
+        session.user.favorites.tracks.side_effect = [page_1, page_2, []]
+
+        snapshot = build_favorites_snapshot(session, page_size=100, max_page_retries=2)
+
+        self.assertTrue(snapshot["load_complete"])
+        self.assertEqual(snapshot["total_favorites"], 2)
+        self.assertEqual(snapshot["pages_loaded"], 2)
+        self.assertIn("isrc:USAAA00001", snapshot["identity_keys"])
+        self.assertIn("fallback:track b|artist b", snapshot["identity_keys"])
+
+    @patch("src.services.tidal_service.time.sleep")
+    def test_build_favorites_snapshot_retries_transient_page_errors(self, mock_sleep):
+        session = MagicMock()
+        good_page = [self._track("Track A", "Artist A", isrc="USAAA00001")]
+        session.user.favorites.tracks.side_effect = [
+            HTTPError("503"),
+            good_page,
+            [],
+        ]
+
+        snapshot = build_favorites_snapshot(session, page_size=100, max_page_retries=2)
+
+        self.assertEqual(snapshot["total_favorites"], 1)
+        self.assertEqual(session.user.favorites.tracks.call_count, 3)
+
+    @patch("src.services.tidal_service.time.sleep")
+    def test_build_favorites_snapshot_fails_closed_after_retry_exhaustion(self, mock_sleep):
+        session = MagicMock()
+        session.user.favorites.tracks.side_effect = HTTPError("503")
+
+        with self.assertRaises(FavoritesRetrievalError):
+            build_favorites_snapshot(session, page_size=100, max_page_retries=2)
+
+    def test_filter_out_favorites_excludes_matching_tracks(self):
+        candidates = [
+            self._track("Track A", "Artist A", isrc="USAAA00001"),
+            self._track("Track B", "Artist B", isrc=None),
+        ]
+        favorite_keys = {"isrc:USAAA00001"}
+
+        filtered, excluded = filter_out_favorites(candidates, favorite_keys)
+
+        self.assertEqual(excluded, 1)
+        self.assertEqual(len(filtered), 1)
+        self.assertEqual(filtered[0].title, "Track B")
 
 if __name__ == '__main__':
     unittest.main()

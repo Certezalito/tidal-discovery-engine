@@ -48,6 +48,12 @@ The CLI supports three modes of operation. Each mode can be combined with `--shu
 uv run python -m src.cli.main --playlist-name "TDE {date}"
 ```
 
+To exclude tracks you already saved in Tidal favorites from the resulting playlist:
+
+```bash
+uv run python -m src.cli.main --playlist-name "TDE {date}" --exclude-favorites
+```
+
 ### Mode 1: Last.fm Recommendations (Default)
 
 Selects random tracks from your Tidal favorites and finds similar music through Last.fm.
@@ -100,6 +106,7 @@ uv run python -m src.cli.main --gemini --playlist-name "TDE Gemini Override" --f
 - Missing or blank `GEMINI_MODEL` logs one warning per run and uses the built-in default model.
 - Fallback is attempted only when the primary model is unavailable or not found **and** `GEMINI_FALLBACK_MODEL` is configured.
 - Auth, quota, and permission failures do **not** trigger fallback.
+- If Gemini returns an unusable structured response (including valid-but-empty parsed output), the CLI performs exactly one recovery retry and then fails closed if still unusable.
 
 ### Mode 3: Single Seed Track
 
@@ -148,6 +155,7 @@ Expected outcome: A playlist of 20 underground, lesser-known tracks inspired by 
 | `--shuffle` | Changes recommendation behavior. Last.fm: fetches a large pool and randomly selects. Gemini: requests deep cuts and underground tracks. Used in all modes. | `False` | No |
 | `--artist` | Artist name for single-seed mode (Mode 3). **Must be used with `--track`**. | — | No |
 | `--track` | Track title for single-seed mode (Mode 3). **Must be used with `--artist`**. | — | No |
+| `--exclude-favorites` | Exclude tracks already present in your Tidal favorites from the final playlist output. | `False` | No |
 | `--playlist-name` | Name for the new Tidal playlist. Use `{date}` to insert the current date (YYYYMMDD format). | — | **Yes** |
 | `--folder` | Tidal folder to place the playlist in. Created automatically if it does not exist. | — | No |
 
@@ -156,6 +164,7 @@ Expected outcome: A playlist of 20 underground, lesser-known tracks inspired by 
 - `--artist` and `--track` must be provided together. Providing only one produces an error.
 - `--num-similar-tracks` must be a positive integer.
 - `--gemini` requires the `GEMINI_API_KEY` environment variable to be set.
+- `--exclude-favorites` is fail-closed: if the full favorites list cannot be fetched, the run aborts with guidance instead of producing potentially incorrect output.
 
 ## Troubleshooting
 
@@ -201,6 +210,32 @@ uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --num-s
     ```
 
 3. Retry the original command after resolving the credential or quota issue.
+
+### Gemini Response Handling Failure
+
+**Symptoms:** The CLI exits with an error mentioning `category='response-handling'` or indicates Gemini returned an unusable structured response after retry.
+
+**Explanation:** The request reached Gemini, but the response was not usable for playlist generation (for example, empty parsed output or blocked terminal state). The CLI retries exactly once and then aborts to avoid misattributing the failure to `--exclude-favorites`.
+
+**Corrective action:**
+
+1. Retry the command once later (provider-side transient issues can recover).
+2. Verify `GEMINI_MODEL` (and `GEMINI_FALLBACK_MODEL` if configured) are valid for your account.
+3. If you are using `--exclude-favorites`, note that this failure occurs before favorites filtering runs.
+
+### Favorites Exclusion Retrieval Failure
+
+**Symptoms:** The CLI exits with an error indicating it could not retrieve the complete favorites list for `--exclude-favorites`.
+
+**Explanation:** Exclusion mode requires a complete favorites snapshot. If favorites pagination fails after retries or returns incomplete data, the run aborts by design.
+
+**Corrective action:**
+
+1. Verify `tidal_session.json` is valid (re-authenticate if needed).
+2. Check network connectivity and retry the same command.
+3. If you must proceed immediately without exclusion, rerun without `--exclude-favorites`.
+
+**Note:** Favorites exclusion data is held in memory for the current run only; no favorites cache file is written.
 
 ## Scheduling
 

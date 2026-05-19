@@ -106,6 +106,26 @@
 - **DR-004**: Terminology for options, modes, and outputs MUST remain consistent
   across spec, quickstart, and README updates.
 
+### Validation Requirements *(mandatory)*
+
+- **VR-001**: Every behavior-changing requirement MUST name the targeted automated
+  validation that will fail if the behavior regresses.
+- **VR-002**: Validation coverage MUST include the most directly affected CLI path,
+  service behavior, or error-handling branch.
+- **VR-003**: Documentation-only changes MAY satisfy validation with content
+  verification instead of automated runtime tests, but that exception MUST be
+  stated explicitly.
+
+### Evidence & Unknowns Requirements *(mandatory)*
+
+- **ER-001**: Unknown facts MUST be called out explicitly; the specification MUST
+  not invent behavior, defaults, limits, or external API capabilities.
+- **ER-002**: Any unresolved external fact MUST identify the best planned source
+  of truth, preferring repository documentation first and official vendor or API
+  documentation when the repository does not answer it.
+- **ER-003**: Assumptions MAY be used only when clearly labeled and only when they
+  do not replace an available authoritative source.
+
 ### Key Entities *(include if feature involves data)*
 
 - **[Entity 1]**: [What it represents, key attributes without implementation]

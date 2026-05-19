@@ -2,6 +2,7 @@ import os
 import json
 import random
 import time
+import re
 import tidalapi
 from tidalapi.exceptions import ObjectNotFound
 from requests.exceptions import HTTPError
@@ -10,6 +11,118 @@ import click
 import datetime
 
 SESSION_FILE = "tidal_session.json"
+
+
+class FavoritesRetrievalError(RuntimeError):
+    """Raised when favorites retrieval is incomplete or fails in exclusion mode."""
+
+
+def normalize_text(value):
+    if value is None:
+        return ""
+    return str(value).strip().lower()
+
+
+def normalize_isrc(value):
+    if value is None:
+        return ""
+    # Keep alphanumerics only and uppercase for stable comparisons.
+    return re.sub(r"[^A-Za-z0-9]", "", str(value)).upper()
+
+
+def _extract_track_title(track):
+    return getattr(track, "title", None) or getattr(track, "name", None)
+
+
+def _extract_primary_artist(track):
+    artist = getattr(track, "artist", None)
+    if artist and getattr(artist, "name", None):
+        return artist.name
+    artists = getattr(track, "artists", None)
+    if artists and len(artists) > 0 and getattr(artists[0], "name", None):
+        return artists[0].name
+    return ""
+
+
+def get_track_identity_key(track):
+    isrc = normalize_isrc(getattr(track, "isrc", None))
+    if isrc:
+        return f"isrc:{isrc}"
+
+    title = normalize_text(_extract_track_title(track))
+    primary_artist = normalize_text(_extract_primary_artist(track))
+    if title and primary_artist:
+        return f"fallback:{title}|{primary_artist}"
+    return ""
+
+
+def fetch_all_favorite_tracks(session, page_size=100, max_page_retries=2):
+    favorite_tracks = []
+    offset = 0
+    pages_loaded = 0
+
+    while True:
+        last_error = None
+        page_tracks = None
+
+        for attempt in range(max_page_retries + 1):
+            try:
+                page_tracks = session.user.favorites.tracks(offset=offset, limit=page_size)
+                break
+            except Exception as exc:
+                last_error = exc
+                if attempt < max_page_retries:
+                    time.sleep(0.2 * (2 ** attempt))
+                    continue
+
+        if page_tracks is None:
+            raise FavoritesRetrievalError(
+                f"Failed retrieving favorites page at offset={offset} after {max_page_retries + 1} attempts"
+            ) from last_error
+
+        if not page_tracks:
+            break
+
+        favorite_tracks.extend(page_tracks)
+        pages_loaded += 1
+        offset += len(page_tracks)
+
+    return favorite_tracks, pages_loaded
+
+
+def build_favorites_snapshot(session, page_size=100, max_page_retries=2):
+    tracks, pages_loaded = fetch_all_favorite_tracks(
+        session,
+        page_size=page_size,
+        max_page_retries=max_page_retries,
+    )
+
+    identity_keys = set()
+    for track in tracks:
+        key = get_track_identity_key(track)
+        if key:
+            identity_keys.add(key)
+
+    return {
+        "identity_keys": identity_keys,
+        "total_favorites": len(tracks),
+        "pages_loaded": pages_loaded,
+        "load_complete": True,
+    }
+
+
+def filter_out_favorites(candidates, favorite_identity_keys):
+    filtered = []
+    excluded_count = 0
+
+    for track in candidates:
+        key = get_track_identity_key(track)
+        if key and key in favorite_identity_keys:
+            excluded_count += 1
+            continue
+        filtered.append(track)
+
+    return filtered, excluded_count
 
 def get_session():
     session = tidalapi.Session()
@@ -37,22 +150,14 @@ def get_session():
                 'expiry_time': session.expiry_time.isoformat()
             }, f)
         
-        click.echo(f"\n--- Tidal Authentication Successful ---")
+        click.echo("\n--- Tidal Authentication Successful ---")
         click.echo(f"Session details have been saved to `{SESSION_FILE}` for future non-interactive use.")
         click.echo("-------------------------------------\n")
         
     return session
 
 def get_random_favorite_tracks(session, num_tracks):
-    favorite_tracks = []
-    offset = 0
-    limit = 100
-    while True:
-        new_tracks = session.user.favorites.tracks(offset=offset, limit=limit)
-        if not new_tracks:
-            break
-        favorite_tracks.extend(new_tracks)
-        offset += len(new_tracks)
+    favorite_tracks, _ = fetch_all_favorite_tracks(session)
 
     if len(favorite_tracks) < num_tracks:
         click.echo(f"Warning: Requested {num_tracks} favorite tracks, but only {len(favorite_tracks)} were found. Using all available favorite tracks.")
@@ -274,7 +379,7 @@ def get_track_by_isrc(session, isrc):
     except ObjectNotFound:
         # Specific exception raised when ISRC is not found
         pass
-    except Exception as e:
+    except Exception:
         # We rely on the caller to log robustly, but a basic print for now or silence is fine 
         # as the plan says "Log the error and skip". The caller (main.py) handles logging.
         pass
