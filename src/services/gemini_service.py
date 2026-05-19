@@ -8,6 +8,15 @@ from dotenv import dotenv_values
 
 DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
 _DEFAULT_WARNING_EMITTED = False
+RECOVERY_RETRY_LIMIT = 1
+
+_BLOCKING_FINISH_REASONS = {
+    "SAFETY",
+    "BLOCKLIST",
+    "PROHIBITED_CONTENT",
+    "MALFORMED_FUNCTION_CALL",
+    "UNEXPECTED_TOOL_CALL",
+}
 
 
 class GeminiModelUnavailableError(ValueError):
@@ -17,6 +26,21 @@ class Song(BaseModel):
     artist: str
     title: str
     isrc: str | None = None  # Make ISRC optional
+
+
+def _extract_error_code(error):
+    code = getattr(error, "code", None)
+    if code is None:
+        return None
+
+    try:
+        return int(code)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_retryable_status_code(code):
+    return code == 429 or (code is not None and code >= 500)
 
 
 def _normalize_seed_track(track):
@@ -96,18 +120,59 @@ def _resolve_fallback_model(dotenv_config):
 
 
 def _classify_client_error(error):
+    code = _extract_error_code(error)
     message = str(error).lower()
 
-    if "model" in message and ("not found" in message or "unavailable" in message):
+    if code == 404 or ("model" in message and ("not found" in message or "unavailable" in message)):
         return "unavailable/not-found", True
-    if "permission" in message or "forbidden" in message:
-        return "permission", False
-    if "quota" in message or "rate limit" in message or "resource exhausted" in message:
-        return "quota", False
-    if "api key" in message or "unauthorized" in message or "authentication" in message or "auth" in message:
+    if code == 401 or "api key" in message or "unauthorized" in message or "authentication" in message:
         return "auth", False
+    if code == 403 or "permission" in message or "forbidden" in message:
+        return "permission", False
+    if code == 429 or "quota" in message or "rate limit" in message or "resource exhausted" in message:
+        return "quota", False
+    if code in {400, 422}:
+        return "client", False
 
     return "client", False
+
+
+def _classify_response_state(response):
+    prompt_feedback = getattr(response, "prompt_feedback", None)
+    block_reason = getattr(prompt_feedback, "block_reason", None)
+    if block_reason and str(block_reason).upper() not in {"UNSPECIFIED", "BLOCK_REASON_UNSPECIFIED"}:
+        return "unusable-blocked", f"prompt_feedback.block_reason={block_reason}"
+
+    candidates = getattr(response, "candidates", None) or []
+    for candidate in candidates:
+        finish_reason = getattr(candidate, "finish_reason", None)
+        if finish_reason and str(finish_reason).upper() in _BLOCKING_FINISH_REASONS:
+            return "unusable-blocked", f"candidate.finish_reason={finish_reason}"
+
+    parsed = getattr(response, "parsed", None)
+    if not parsed:
+        return "unusable-empty", "empty parsed response"
+
+    normalized = []
+    for item in parsed:
+        if hasattr(item, "model_dump"):
+            row = item.model_dump()
+        elif isinstance(item, dict):
+            row = item
+        else:
+            row = {
+                "artist": getattr(item, "artist", None),
+                "title": getattr(item, "title", None),
+                "isrc": getattr(item, "isrc", None),
+            }
+
+        if row.get("artist") and row.get("title"):
+            normalized.append(row)
+
+    if not normalized:
+        return "unusable-empty", "parsed recommendations missing artist/title"
+
+    return "usable", normalized
 
 
 def _build_actionable_error(model_id, category, error):
@@ -116,6 +181,8 @@ def _build_actionable_error(model_id, category, error):
         "auth": "Verify GEMINI_API_KEY and account authentication settings.",
         "quota": "Check Gemini quota/rate limits and retry later.",
         "permission": "Verify account permissions for the configured model.",
+        "response-handling": "Gemini returned an unusable structured response after one recovery retry. Retry later or adjust model configuration.",
+        "server": "Gemini service returned a transient server error. Retry later.",
         "client": "Review request configuration and model identifiers.",
     }
 
@@ -125,25 +192,63 @@ def _build_actionable_error(model_id, category, error):
     )
 
 
-def _generate_recommendations_with_model(client, model_name, full_prompt):
-    response = client.models.generate_content(
-        model=model_name,
-        contents=full_prompt,
-        config=types.GenerateContentConfig(
-            temperature=1,
-            top_p=0.95,
-            top_k=64,
-            max_output_tokens=8192,
-            response_mime_type='application/json',
-            response_schema=list[Song]
-        )
-    )
+def _generate_recommendations_with_model(client, model_name, full_prompt, recovery_retries=RECOVERY_RETRY_LIMIT):
+    max_attempts = recovery_retries + 1
 
-    if response.parsed:
-        return [req.model_dump() for req in response.parsed]
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    temperature=1,
+                    top_p=0.95,
+                    top_k=64,
+                    max_output_tokens=8192,
+                    response_mime_type='application/json',
+                    response_schema=list[Song]
+                )
+            )
 
-    logging.warning("Gemini returned empty parsed response for model '%s'.", model_name)
-    return []
+            state, payload = _classify_response_state(response)
+            if state == "usable":
+                return payload
+
+            if attempt < max_attempts:
+                logging.warning(
+                    "Gemini response unusable for model '%s' (reason=%s). Retrying...",
+                    model_name,
+                    payload,
+                )
+                continue
+
+            message = _build_actionable_error(model_name, "response-handling", payload)
+            logging.error(message)
+            raise ValueError(message)
+
+        except genai.errors.ClientError as error:
+            status_code = _extract_error_code(error)
+            if _is_retryable_status_code(status_code) and attempt < max_attempts:
+                logging.warning(
+                    "Gemini retryable client error for model '%s' (code=%s). Retrying...",
+                    model_name,
+                    status_code,
+                )
+                continue
+            raise
+
+        except genai.errors.ServerError:
+            if attempt < max_attempts:
+                logging.warning(
+                    "Gemini server error for model '%s'. Retrying once...",
+                    model_name,
+                )
+                continue
+            raise
+
+    message = _build_actionable_error(model_name, "response-handling", "unknown response state")
+    logging.error(message)
+    raise ValueError(message)
 
 def get_recommendations(api_key, seed_tracks, count, shuffle=False):
     """
@@ -212,7 +317,12 @@ def get_recommendations(api_key, seed_tracks, count, shuffle=False):
     )
 
     try:
-        generated = _generate_recommendations_with_model(client, primary_model, full_prompt)
+        generated = _generate_recommendations_with_model(
+            client,
+            primary_model,
+            full_prompt,
+            recovery_retries=RECOVERY_RETRY_LIMIT,
+        )
         return _cap_recommendations(generated, count)
 
     except genai.errors.ClientError as primary_error:
@@ -225,7 +335,12 @@ def get_recommendations(api_key, seed_tracks, count, shuffle=False):
                 fallback_model,
             )
             try:
-                generated = _generate_recommendations_with_model(client, fallback_model, full_prompt)
+                generated = _generate_recommendations_with_model(
+                    client,
+                    fallback_model,
+                    full_prompt,
+                    recovery_retries=RECOVERY_RETRY_LIMIT,
+                )
                 return _cap_recommendations(generated, count)
             except genai.errors.ClientError as fallback_error:
                 fallback_category, _ = _classify_client_error(fallback_error)
@@ -233,11 +348,15 @@ def get_recommendations(api_key, seed_tracks, count, shuffle=False):
                 logging.error(message)
                 raise ValueError(message) from fallback_error
             except genai.errors.ServerError as fallback_server_error:
-                logging.error(f"Gemini Server Error on fallback model '{fallback_model}': {fallback_server_error}")
-                return []
+                message = _build_actionable_error(fallback_model, "server", fallback_server_error)
+                logging.error(message)
+                raise ValueError(message) from fallback_server_error
+            except ValueError:
+                raise
             except Exception as fallback_unexpected_error:
-                logging.error(f"Gemini Unexpected Error on fallback model '{fallback_model}': {fallback_unexpected_error}")
-                return []
+                message = _build_actionable_error(fallback_model, "client", fallback_unexpected_error)
+                logging.error(message)
+                raise ValueError(message) from fallback_unexpected_error
 
         message = _build_actionable_error(primary_model, category, primary_error)
         logging.error(message)
@@ -246,9 +365,12 @@ def get_recommendations(api_key, seed_tracks, count, shuffle=False):
         raise ValueError(message) from primary_error
 
     except genai.errors.ServerError as e:
-        logging.error(f"Gemini Server Error: {e}")
-        return []
+        message = _build_actionable_error(primary_model, "server", e)
+        logging.error(message)
+        raise ValueError(message) from e
+    except ValueError:
+        raise
     except Exception as e:
-        # General catch-all for Pydantic validation errors or network issues
-        logging.error(f"Gemini Unexpected Error: {e}")
-        return []
+        message = _build_actionable_error(primary_model, "client", e)
+        logging.error(message)
+        raise ValueError(message) from e

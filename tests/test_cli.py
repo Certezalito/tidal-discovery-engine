@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 from src.cli.main import main
 from src.services.gemini_service import GeminiModelUnavailableError
+from src.lib.logging import EXCLUDE_FAVORITES_SHORTFALL
 
 class TestCLI(unittest.TestCase):
     def setUp(self):
@@ -170,6 +171,181 @@ class TestCLI(unittest.TestCase):
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn('No tracks could be inserted into the playlist', result.output)
         self.assertFalse(mock_create_playlist.called)
+
+    @patch('src.services.tidal_service.get_session')
+    @patch('src.services.lastfm_service.get_network')
+    @patch('src.cli.main.setup_logging')
+    @patch('src.services.tidal_service.get_random_favorite_tracks')
+    @patch('src.services.tidal_service.build_favorites_snapshot')
+    @patch('src.services.gemini_service.get_recommendations')
+    @patch('src.services.tidal_service.create_playlist')
+    @patch('src.cli.main.log_cli_warning')
+    def test_gemini_failure_with_exclude_favorites_not_misattributed(
+        self,
+        mock_log_warning,
+        mock_create_playlist,
+        mock_get_recommendations,
+        mock_build_snapshot,
+        mock_get_random,
+        mock_setup_logging,
+        mock_get_network,
+        mock_get_session,
+    ):
+        mock_get_session.return_value = MagicMock()
+        mock_get_network.return_value = MagicMock()
+
+        seed = MagicMock()
+        seed.artist.name = 'Seed Artist'
+        seed.name = 'Seed Title'
+        mock_get_random.return_value = [seed]
+
+        mock_build_snapshot.return_value = {
+            'identity_keys': set(),
+            'total_favorites': 0,
+            'pages_loaded': 1,
+            'load_complete': True,
+        }
+        mock_get_recommendations.side_effect = ValueError('Gemini request failed. model=primary')
+
+        result = self.runner.invoke(
+            main,
+            ['--gemini', '--exclude-favorites', '--playlist-name', 'Test Playlist'],
+            env={'GEMINI_API_KEY': 'test-key'},
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn('Gemini request failed', result.output)
+        self.assertFalse(mock_create_playlist.called)
+        self.assertFalse(any(call.args[0] == EXCLUDE_FAVORITES_SHORTFALL for call in mock_log_warning.call_args_list))
+
+    @patch('src.services.tidal_service.get_session')
+    @patch('src.services.lastfm_service.get_network')
+    @patch('src.cli.main.setup_logging')
+    @patch('src.services.tidal_service.get_random_favorite_tracks')
+    @patch('src.services.tidal_service.build_favorites_snapshot')
+    @patch('src.services.gemini_service.get_recommendations')
+    @patch('src.services.tidal_service.get_track_by_isrc')
+    @patch('src.services.tidal_service.search_for_track')
+    @patch('src.services.tidal_service.create_playlist')
+    @patch('src.cli.main.log_cli_warning')
+    def test_gemini_recovery_results_filter_and_create_playlist(
+        self,
+        mock_log_warning,
+        mock_create_playlist,
+        mock_search,
+        mock_get_track_by_isrc,
+        mock_get_recommendations,
+        mock_build_snapshot,
+        mock_get_random,
+        mock_setup_logging,
+        mock_get_network,
+        mock_get_session,
+    ):
+        mock_get_session.return_value = MagicMock()
+        mock_get_network.return_value = MagicMock()
+
+        seed = MagicMock()
+        seed.artist.name = 'Seed Artist'
+        seed.name = 'Seed Title'
+        mock_get_random.return_value = [seed]
+
+        mock_build_snapshot.return_value = {
+            'identity_keys': {'isrc:FAV001'},
+            'total_favorites': 1,
+            'pages_loaded': 1,
+            'load_complete': True,
+        }
+
+        mock_get_recommendations.return_value = [
+            {'artist': 'Artist A', 'title': 'Track A', 'isrc': 'FAV001'},
+            {'artist': 'Artist B', 'title': 'Track B', 'isrc': 'NEW001'},
+        ]
+        mock_get_track_by_isrc.side_effect = [None, None]
+
+        favorite_track = MagicMock()
+        favorite_track.artist.name = 'Artist A'
+        favorite_track.name = 'Track A'
+        favorite_track.isrc = 'FAV001'
+        favorite_track.id = 'fav-track'
+
+        new_track = MagicMock()
+        new_track.artist.name = 'Artist B'
+        new_track.name = 'Track B'
+        new_track.isrc = 'NEW001'
+        new_track.id = 'new-track'
+
+        mock_search.side_effect = [favorite_track, new_track]
+
+        playlist = MagicMock()
+        playlist.id = 'playlist-1'
+        playlist.name = 'Test Playlist'
+        mock_create_playlist.return_value = playlist
+
+        result = self.runner.invoke(
+            main,
+            [
+                '--gemini',
+                '--exclude-favorites',
+                '--playlist-name', 'Test Playlist',
+                '--num-tidal-tracks', '1',
+                '--num-similar-tracks', '1',
+            ],
+            env={'GEMINI_API_KEY': 'test-key'},
+        )
+
+        self.assertEqual(result.exit_code, 0)
+        _, kwargs = mock_create_playlist.call_args
+        self.assertEqual(len(kwargs['tracks']), 1)
+        self.assertEqual(kwargs['tracks'][0].id, 'new-track')
+        self.assertFalse(any(call.args[0] == EXCLUDE_FAVORITES_SHORTFALL for call in mock_log_warning.call_args_list))
+
+    @patch('src.services.tidal_service.get_session')
+    @patch('src.services.lastfm_service.get_network')
+    @patch('src.cli.main.setup_logging')
+    @patch('src.services.gemini_service.get_recommendations')
+    @patch('src.services.tidal_service.get_random_favorite_tracks')
+    @patch('src.services.lastfm_service.get_similar_tracks')
+    @patch('src.services.tidal_service.search_for_track')
+    @patch('src.services.tidal_service.create_playlist')
+    def test_non_gemini_mode_does_not_call_gemini_service(
+        self,
+        mock_create_playlist,
+        mock_search,
+        mock_similar,
+        mock_get_random,
+        mock_get_recommendations,
+        mock_setup_logging,
+        mock_get_network,
+        mock_get_session,
+    ):
+        mock_get_session.return_value = MagicMock()
+        mock_get_network.return_value = MagicMock()
+
+        seed = MagicMock()
+        seed.artist.name = 'Seed Artist'
+        seed.name = 'Seed Track'
+        mock_get_random.return_value = [seed]
+
+        similar_track = MagicMock()
+        similar_track.artist.name = 'Artist B'
+        similar_track.title = 'Track B'
+        mock_similar.return_value = [similar_track]
+
+        resolved = MagicMock()
+        resolved.artist.name = 'Artist B'
+        resolved.name = 'Track B'
+        resolved.id = '1'
+        mock_search.return_value = resolved
+
+        playlist = MagicMock()
+        playlist.id = 'playlist-1'
+        playlist.name = 'Test Playlist'
+        mock_create_playlist.return_value = playlist
+
+        result = self.runner.invoke(main, ['--playlist-name', 'Test Playlist'])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_get_recommendations.assert_not_called()
 
 
 if __name__ == '__main__':

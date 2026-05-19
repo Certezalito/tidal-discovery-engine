@@ -3,7 +3,17 @@ import click
 import logging
 import datetime
 import random
-from src.lib.logging import setup_logging, log_cli_warning, log_cli_error, bounded_name_preview
+from src.lib.logging import (
+    setup_logging,
+    log_cli_warning,
+    log_cli_error,
+    bounded_name_preview,
+    EXCLUDE_FAVORITES_ENABLED,
+    EXCLUDE_FAVORITES_SUMMARY,
+    EXCLUDE_FAVORITES_SHORTFALL,
+    EXCLUDE_FAVORITES_FETCH_FAILED,
+    GEMINI_RESPONSE_HANDLING_FAILED,
+)
 from src.services import tidal_service, lastfm_service, gemini_service
 from src.services.gemini_service import GeminiModelUnavailableError
 
@@ -16,7 +26,12 @@ from src.services.gemini_service import GeminiModelUnavailableError
 @click.option("--artist", help="The artist of a specific track to use as a seed.")
 @click.option("--track", help="The title of a specific track to use as a seed.")
 @click.option("--folder", help="Optional folder name to organize the playlist.")
-def main(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, artist, track, folder):
+@click.option(
+    "--exclude-favorites",
+    is_flag=True,
+    help="Exclude tracks that already exist in your Tidal favorites from playlist output.",
+)
+def main(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, artist, track, folder, exclude_favorites):
     """
     Generates a new Tidal playlist with recommended tracks based on a selection of your favorite tracks.
     """
@@ -41,6 +56,37 @@ def main(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, a
     try:
         tidal_session = tidal_service.get_session()
         lastfm_network = lastfm_service.get_network()
+        favorite_identity_keys = set()
+
+        if exclude_favorites:
+            logging.info("%s: Building favorites snapshot for exclusion", EXCLUDE_FAVORITES_ENABLED)
+            try:
+                favorites_snapshot = tidal_service.build_favorites_snapshot(
+                    tidal_session,
+                    page_size=100,
+                    max_page_retries=2,
+                )
+            except tidal_service.FavoritesRetrievalError as exc:
+                guidance = (
+                    "Failed to retrieve your complete favorites list for --exclude-favorites. "
+                    "Check Tidal session validity, permissions, and network connectivity, then retry. "
+                    "You can also rerun without --exclude-favorites."
+                )
+                log_cli_error(
+                    EXCLUDE_FAVORITES_FETCH_FAILED,
+                    guidance,
+                    details=str(exc),
+                )
+                raise click.ClickException(guidance)
+
+            favorite_identity_keys = favorites_snapshot["identity_keys"]
+            logging.info(
+                "%s: Loaded %s favorites across %s pages (%s comparable keys)",
+                EXCLUDE_FAVORITES_SUMMARY,
+                favorites_snapshot["total_favorites"],
+                favorites_snapshot["pages_loaded"],
+                len(favorite_identity_keys),
+            )
 
         # Step 1: Build the list of seed tracks first
         seed_tracks = []
@@ -82,13 +128,14 @@ def main(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, a
         tidal_tracks_to_add = []
         no_similar_tracks_seeds = []
         use_gemini = gemini
+        requested_track_count = len(seed_tracks) * num_similar_tracks
 
         if use_gemini:
             # --- GEMINI RECOMMENDATION PATH ---
             logging.info("Branch: Using Gemini AI for recommendations.")
 
             # Calculate total tracks needed
-            total_count = len(seed_tracks) * num_similar_tracks
+            total_count = requested_track_count * (3 if exclude_favorites else 1)
             unresolved_recommendations = []
 
             try:
@@ -110,6 +157,13 @@ def main(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, a
                     recommendations = []
                 else:
                     raise
+            except ValueError as gemini_response_error:
+                log_cli_error(
+                    GEMINI_RESPONSE_HANDLING_FAILED,
+                    "Gemini recommendation retrieval failed before playlist filtering.",
+                    details=str(gemini_response_error),
+                )
+                raise click.ClickException(str(gemini_response_error))
 
             if use_gemini:
                 logging.info(f"Gemini returned {len(recommendations)} suggestions. Resolving tracks...")
@@ -175,7 +229,10 @@ def main(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, a
             for t in seed_tracks:
                 try:
                     # Get similar tracks
-                    found_tracks = lastfm_service.get_similar_tracks(lastfm_network, t, 1000 if shuffle else num_similar_tracks)
+                    per_seed_target = 1000 if shuffle else num_similar_tracks
+                    if exclude_favorites and not shuffle:
+                        per_seed_target = max(per_seed_target * 3, per_seed_target)
+                    found_tracks = lastfm_service.get_similar_tracks(lastfm_network, t, per_seed_target)
 
                     # Get and log top tags for the artist
                     tags = lastfm_service.get_top_tags_for_artist(lastfm_network, t.artist.name)
@@ -203,6 +260,34 @@ def main(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, a
                 tidal_track = tidal_service.search_for_track(tidal_session, t)
                 if tidal_track:
                     tidal_tracks_to_add.append(tidal_track)
+
+        if exclude_favorites:
+            filtered_tracks, excluded_count = tidal_service.filter_out_favorites(
+                tidal_tracks_to_add,
+                favorite_identity_keys,
+            )
+            tidal_tracks_to_add = filtered_tracks[:requested_track_count]
+            logging.info(
+                "%s: input=%s excluded=%s remaining=%s",
+                EXCLUDE_FAVORITES_SUMMARY,
+                len(filtered_tracks) + excluded_count,
+                excluded_count,
+                len(tidal_tracks_to_add),
+            )
+
+            shortfall = requested_track_count - len(tidal_tracks_to_add)
+            if shortfall > 0:
+                shortfall_message = (
+                    "Playlist contains fewer tracks than requested after excluding favorites. "
+                    "All remaining candidates were already in favorites or unavailable."
+                )
+                log_cli_warning(
+                    EXCLUDE_FAVORITES_SHORTFALL,
+                    shortfall_message,
+                    requested=requested_track_count,
+                    inserted=len(tidal_tracks_to_add),
+                    shortfall=shortfall,
+                )
                     
         logging.info(f"Found {len(tidal_tracks_to_add)} tracks on Tidal to add to the playlist.")
 
