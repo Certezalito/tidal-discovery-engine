@@ -1,8 +1,11 @@
 # Feature Specification: [FEATURE NAME]
 
-**Feature Branch**: `[###-feature-name]`  
-**Created**: [DATE]  
-**Status**: Draft  
+**Feature Branch**: `[###-feature-name]`
+
+**Created**: [DATE]
+
+**Status**: Draft
+
 **Input**: User description: "$ARGUMENTS"
 
 ## User Scenarios & Testing *(mandatory)*
@@ -11,7 +14,7 @@
   IMPORTANT: User stories should be PRIORITIZED as user journeys ordered by importance.
   Each user story/journey must be INDEPENDENTLY TESTABLE - meaning if you implement just ONE of them,
   you should still have a viable MVP (Minimum Viable Product) that delivers value.
-  
+
   Assign priorities (P1, P2, P3, etc.) to each story, where P1 is the most critical.
   Think of each story as a standalone slice of functionality that can be:
   - Developed independently
@@ -85,7 +88,7 @@
 ### Functional Requirements
 
 - **FR-001**: System MUST [specific capability, e.g., "allow users to create accounts"]
-- **FR-002**: System MUST [specific capability, e.g., "validate email addresses"]  
+- **FR-002**: System MUST [specific capability, e.g., "validate email addresses"]
 - **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
 - **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
 - **FR-005**: System MUST [behavior, e.g., "log all security events"]
@@ -94,37 +97,6 @@
 
 - **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
 - **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
-
-### Documentation & Understandability Requirements *(mandatory)*
-
-- **DR-001**: Feature specification MUST list all end-user documentation artifacts
-  that need updates (for example, README sections, quickstart steps, CLI examples).
-- **DR-002**: Every new or changed user-facing behavior MUST include plain-language
-  explanation and at least one concrete usage example.
-- **DR-003**: Error/failure scenarios exposed to users MUST include corrective
-  guidance text suitable for documentation.
-- **DR-004**: Terminology for options, modes, and outputs MUST remain consistent
-  across spec, quickstart, and README updates.
-
-### Validation Requirements *(mandatory)*
-
-- **VR-001**: Every behavior-changing requirement MUST name the targeted automated
-  validation that will fail if the behavior regresses.
-- **VR-002**: Validation coverage MUST include the most directly affected CLI path,
-  service behavior, or error-handling branch.
-- **VR-003**: Documentation-only changes MAY satisfy validation with content
-  verification instead of automated runtime tests, but that exception MUST be
-  stated explicitly.
-
-### Evidence & Unknowns Requirements *(mandatory)*
-
-- **ER-001**: Unknown facts MUST be called out explicitly; the specification MUST
-  not invent behavior, defaults, limits, or external API capabilities.
-- **ER-002**: Any unresolved external fact MUST identify the best planned source
-  of truth, preferring repository documentation first and official vendor or API
-  documentation when the repository does not answer it.
-- **ER-003**: Assumptions MAY be used only when clearly labeled and only when they
-  do not replace an available authoritative source.
 
 ### Key Entities *(include if feature involves data)*
 
