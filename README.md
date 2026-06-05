@@ -145,6 +145,29 @@ Expected outcome: A playlist of 20 underground, lesser-known tracks inspired by 
 - Tidal tracks that cannot be resolved are skipped with a warning showing the skipped count and a preview of up to 5 names.
 - If zero tracks can be inserted after resolution, the run fails.
 
+### Mode 4: Genre Playlists
+
+Reads your entire Tidal library, uses Gemini to classify each track by genre, and creates or syncs one playlist per genre inside a dedicated folder. This mode helps you organize your entire library automatically.
+
+**First Run & Syncing** — organize your library into a folder named "Genres":
+
+```bash
+uv run python -m src.cli.main genre-playlist
+```
+
+**Custom Folder** — organize your library into a specific folder:
+
+```bash
+uv run python -m src.cli.main genre-playlist --folder "My Music Styles"
+```
+
+Expected outcome: A folder is created (or reused), containing playlists for each genre identified in your library. Tracks with ambiguous or unidentifiable genres are placed into an "Unknown" playlist.
+
+**Mode 4 notes:**
+- Re-running the command syncs the existing playlists by adding new tracks and removing tracks that are no longer in your library, without creating duplicates.
+- Multi-genre tracks are added to all applicable genre playlists.
+- This command uses `GEMINI_API_KEY` and requires a stable connection capable of retrieving large libraries.
+
 ## All Parameters
 
 | Option | Description | Default | Required |
@@ -156,8 +179,8 @@ Expected outcome: A playlist of 20 underground, lesser-known tracks inspired by 
 | `--artist` | Artist name for single-seed mode (Mode 3). **Must be used with `--track`**. | — | No |
 | `--track` | Track title for single-seed mode (Mode 3). **Must be used with `--artist`**. | — | No |
 | `--exclude-favorites` | Exclude tracks already present in your Tidal favorites from the final playlist output. | `False` | No |
-| `--playlist-name` | Name for the new Tidal playlist. Use `{date}` to insert the current date (YYYYMMDD format). | — | **Yes** |
-| `--folder` | Tidal folder to place the playlist in. Created automatically if it does not exist. | — | No |
+| `--playlist-name` | Name for the new Tidal playlist. Use `{date}` to insert the current date (YYYYMMDD format). | — | **Yes** (Modes 1-3) |
+| `--folder` | Tidal folder to place the playlist in. Created automatically if it does not exist. | `Genres` | No |
 
 **Constraints:**
 

@@ -27,6 +27,12 @@ class Song(BaseModel):
     title: str
     isrc: str | None = None  # Make ISRC optional
 
+class GenreClassificationResult(BaseModel):
+    isrc: str | None = None
+    title: str | None = None
+    artist: str | None = None
+    genres: list[str]
+
 
 def _extract_error_code(error):
     code = getattr(error, "code", None)
@@ -374,3 +380,86 @@ def get_recommendations(api_key, seed_tracks, count, shuffle=False):
         message = _build_actionable_error(primary_model, "client", e)
         logging.error(message)
         raise ValueError(message) from e
+
+
+def classify_tracks_genres(api_key: str, tracks: list) -> list[dict]:
+    """
+    Classifies a list of tracks into genres using Gemini.
+    
+    Args:
+        api_key (str): The Google Gemini API key.
+        tracks (list): A list of dicts with 'artist', 'title', 'isrc'.
+        
+    Returns:
+        list[dict]: A list of dicts with keys 'artist', 'title', 'isrc', 'genres'.
+    """
+    try:
+        client = genai.Client(api_key=api_key)
+    except Exception as e:
+        logging.error(f"Failed to initialize Gemini Client: {e}")
+        raise ValueError("Invalid Gemini API Configuration") from e
+
+    descriptions = []
+    for t in tracks:
+        isrc_part = f" (ISRC: {t.get('isrc')})" if t.get("isrc") else ""
+        descriptions.append(f"- {t.get('artist')} - {t.get('title')}{isrc_part}")
+    
+    seeds_text = "\n".join(descriptions)
+
+    full_prompt = (
+        "I will provide a list of songs. "
+        "For each song, identify the most appropriate musical genres. "
+        "A song can have multiple genres if appropriate. "
+        "Return the output strictly in the requested JSON structure. "
+        "Do not invent genres, use established standard genres.\n\n"
+        f"SONGS:\n{seeds_text}"
+    )
+
+    dotenv_config = _read_dotenv_values()
+    primary_model, _ = _resolve_primary_model(dotenv_config)
+
+    for attempt in range(RECOVERY_RETRY_LIMIT + 1):
+        try:
+            response = client.models.generate_content(
+                model=primary_model,
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.3,
+                    response_mime_type='application/json',
+                    response_schema=list[GenreClassificationResult]
+                )
+            )
+            
+            parsed = getattr(response, "parsed", None)
+            if not parsed:
+                if attempt < RECOVERY_RETRY_LIMIT:
+                    continue
+                return []
+                
+            results = []
+            for item in parsed:
+                if hasattr(item, "model_dump"):
+                    row = item.model_dump()
+                elif isinstance(item, dict):
+                    row = item
+                else:
+                    row = {
+                        "artist": getattr(item, "artist", None),
+                        "title": getattr(item, "title", None),
+                        "isrc": getattr(item, "isrc", None),
+                        "genres": getattr(item, "genres", []),
+                    }
+                results.append(row)
+                
+            return results
+            
+        except genai.errors.ClientError as e:
+            if _is_retryable_status_code(_extract_error_code(e)) and attempt < RECOVERY_RETRY_LIMIT:
+                continue
+            raise
+        except genai.errors.ServerError:
+            if attempt < RECOVERY_RETRY_LIMIT:
+                continue
+            raise
+            
+    return []

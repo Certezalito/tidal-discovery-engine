@@ -295,6 +295,44 @@ def get_or_create_folder(session, folder_name):
         except Exception:
             raise
 
+def get_playlists_in_folder(session, folder_id):
+    """
+    Returns a list of playlists existing in the specified folder.
+    """
+    try:
+        folder = tidalapi.playlist.Folder(session, folder_id)
+        return list(folder.items())
+    except Exception as e:
+        logging.warning(f"Could not read items in folder {folder_id}: {e}")
+        return []
+
+def get_playlist_tracks(session, playlist_id):
+    """
+    Retrieves all tracks for a given playlist.
+    """
+    try:
+        playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
+        # tidalapi Playlist.tracks() returns the full list
+        return playlist.tracks()
+    except Exception as e:
+        logging.warning(f"Could not read tracks for playlist {playlist_id}: {e}")
+        return []
+
+def sync_playlist_tracks(session, playlist_id, to_add_ids, to_remove_ids):
+    """
+    Adds and removes tracks from an existing playlist.
+    """
+    try:
+        playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
+        if to_remove_ids:
+            for track_id in to_remove_ids:
+                playlist.remove_by_id(track_id)
+        if to_add_ids:
+            playlist.add(to_add_ids)
+    except Exception as e:
+        logging.error(f"Failed to sync playlist {playlist_id}: {e}")
+        raise
+
 def create_playlist_in_folder(session, name, description, folder_id, track_ids):
     """
     Creates a playlist in a specific folder.

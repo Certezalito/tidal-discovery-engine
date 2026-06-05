@@ -131,6 +131,28 @@ class TestTidalServiceFolders(unittest.TestCase):
         self.assertEqual(result, mock_new_folder)
         self.assertEqual(self.mock_user.create_folder.call_count, 3)
 
+    @patch('src.services.tidal_service.time.sleep')
+    def test_fetch_all_favorite_tracks_large_library(self, mock_sleep):
+        """
+        T025 [P] Add pagination/rate-limit boundary regression test for large libraries.
+        Tests 5000+ tracks to ensure boundary limits are handled.
+        """
+        # Create 52 pages of 100 tracks to equal 5200 tracks
+        def mock_tracks(offset, limit):
+            if offset >= 5200:
+                return []
+            return [MagicMock() for _ in range(limit)]
+            
+        self.mock_user.favorites.tracks.side_effect = mock_tracks
+        
+        from src.services.tidal_service import fetch_all_favorite_tracks
+        tracks, pages = fetch_all_favorite_tracks(self.mock_session, page_size=100)
+        
+        self.assertEqual(len(tracks), 5200)
+        self.assertEqual(pages, 52)
+        # Verify pagination called correct number of times (52 for data + 1 for empty)
+        self.assertEqual(self.mock_user.favorites.tracks.call_count, 53)
+
     @patch('src.services.tidal_service.tidalapi.playlist.Folder')
     def test_create_playlist_in_folder_no_collision(self, params_mock_folder_class):
         # Setup

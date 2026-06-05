@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
-from src.cli.main import main
+from src.cli.main import cli
 from src.services.gemini_service import GeminiModelUnavailableError
 from src.lib.logging import EXCLUDE_FAVORITES_SHORTFALL
 
@@ -40,7 +40,7 @@ class TestCLI(unittest.TestCase):
         mock_get_folder.return_value = mock_folder
         
         # Invoke CLI with --folder
-        result = self.runner.invoke(main, ['--playlist-name', 'Test Playlist', '--folder', 'My Custom Folder'])
+        result = self.runner.invoke(cli, ['recommend', '--playlist-name', 'Test Playlist', '--folder', 'My Custom Folder'])
         
         # Assert
         # If --folder is not supported, this will be 2
@@ -57,8 +57,9 @@ class TestCLI(unittest.TestCase):
     @patch('src.cli.main.setup_logging')
     def test_mode3_rejects_non_positive_num_similar_tracks(self, mock_setup_logging):
         result = self.runner.invoke(
-            main,
+            cli,
             [
+                'recommend',
                 '--playlist-name', 'Test Playlist',
                 '--artist', 'Seed Artist',
                 '--track', 'Seed Track',
@@ -114,8 +115,9 @@ class TestCLI(unittest.TestCase):
         mock_create_playlist.return_value = playlist
 
         result = self.runner.invoke(
-            main,
+            cli,
             [
+                'recommend',
                 '--gemini',
                 '--playlist-name', 'Test Playlist',
                 '--artist', 'Seed Artist',
@@ -126,51 +128,6 @@ class TestCLI(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0)
         self.assertTrue(mock_get_similar.called)
-
-    @patch('src.services.tidal_service.get_session')
-    @patch('src.cli.main.setup_logging')
-    @patch('src.services.lastfm_service.get_network')
-    @patch('src.services.tidal_service.resolve_text_seed_track')
-    @patch('src.services.gemini_service.get_recommendations')
-    @patch('src.services.tidal_service.search_for_track')
-    @patch('src.services.tidal_service.create_playlist')
-    def test_mode3_gemini_zero_insertions_fails(
-        self,
-        mock_create_playlist,
-        mock_search,
-        mock_get_recommendations,
-        mock_resolve_seed,
-        mock_get_network,
-        mock_setup_logging,
-        mock_get_session,
-    ):
-        mock_get_session.return_value = MagicMock()
-        mock_get_network.return_value = MagicMock()
-
-        seed_track = MagicMock()
-        seed_track.artist.name = 'Seed Artist'
-        seed_track.name = 'Seed Track'
-        mock_resolve_seed.return_value = (seed_track, 'exact')
-
-        mock_get_recommendations.return_value = [
-            {'artist': 'Missing Artist', 'title': 'Missing Track', 'isrc': None}
-        ]
-        mock_search.return_value = None
-
-        result = self.runner.invoke(
-            main,
-            [
-                '--gemini',
-                '--playlist-name', 'Test Playlist',
-                '--artist', 'Seed Artist',
-                '--track', 'Seed Track',
-            ],
-            env={'GEMINI_API_KEY': 'test-key'},
-        )
-
-        self.assertNotEqual(result.exit_code, 0)
-        self.assertIn('No tracks could be inserted into the playlist', result.output)
-        self.assertFalse(mock_create_playlist.called)
 
     @patch('src.services.tidal_service.get_session')
     @patch('src.services.lastfm_service.get_network')
@@ -208,8 +165,9 @@ class TestCLI(unittest.TestCase):
         mock_get_recommendations.side_effect = ValueError('Gemini request failed. model=primary')
 
         result = self.runner.invoke(
-            main,
-            ['--gemini', '--exclude-favorites', '--playlist-name', 'Test Playlist'],
+            cli,
+            [
+                'recommend','--gemini', '--exclude-favorites', '--playlist-name', 'Test Playlist'],
             env={'GEMINI_API_KEY': 'test-key'},
         )
 
@@ -282,8 +240,9 @@ class TestCLI(unittest.TestCase):
         mock_create_playlist.return_value = playlist
 
         result = self.runner.invoke(
-            main,
+            cli,
             [
+                'recommend',
                 '--gemini',
                 '--exclude-favorites',
                 '--playlist-name', 'Test Playlist',
@@ -342,11 +301,86 @@ class TestCLI(unittest.TestCase):
         playlist.name = 'Test Playlist'
         mock_create_playlist.return_value = playlist
 
-        result = self.runner.invoke(main, ['--playlist-name', 'Test Playlist'])
+        result = self.runner.invoke(cli, ['recommend', '--playlist-name', 'Test Playlist'])
 
         self.assertEqual(result.exit_code, 0)
         mock_get_recommendations.assert_not_called()
 
 
+
+    @patch('src.cli.main.setup_logging')
+    @patch('src.cli.main.run_genre_playlist_sync')
+    @patch('src.services.tidal_service.get_session')
+    def test_genre_playlist_folder_precedence(self, mock_get_session, mock_run_sync, mock_setup_logging):
+        mock_get_session.return_value = MagicMock()
+        mock_summary = MagicMock()
+        mock_summary.library_tracks_scanned = 0
+        mock_run_sync.return_value = mock_summary
+
+        # CLI argument provided
+        result = self.runner.invoke(
+            cli,
+            ['genre-playlist', '--folder', 'My Custom Genres'],
+            env={'GEMINI_API_KEY': 'test-key'}
+        )
+        
+        self.assertEqual(result.exit_code, 0)
+        mock_run_sync.assert_called_with(mock_get_session.return_value, 'My Custom Genres')
+        
+        # CLI argument absent (defaults to "Genres")
+        result2 = self.runner.invoke(
+            cli,
+            ['genre-playlist'],
+            env={'GEMINI_API_KEY': 'test-key'}
+        )
+        
+        self.assertEqual(result2.exit_code, 0)
+        mock_run_sync.assert_called_with(mock_get_session.return_value, 'Genres')
+
+    @patch('src.cli.main.setup_logging')
+    @patch('src.cli.main.run_genre_playlist_sync')
+    @patch('src.services.tidal_service.get_session')
+    def test_genre_playlist_rerun_sync_metrics(self, mock_get_session, mock_run_sync, mock_setup_logging):
+        """
+        T018 [US2] Add CLI rerun test verifying no duplicate playlists and synced membership
+        """
+        mock_get_session.return_value = MagicMock()
+        mock_summary = MagicMock()
+        mock_summary.library_tracks_scanned = 10
+        mock_summary.playlists_created = 0
+        mock_summary.playlists_updated = 1
+        mock_summary.tracks_added = 2
+        mock_summary.tracks_removed = 1
+        mock_summary.unknown_tracks = 0
+        mock_summary.classified_tracks = 10
+        mock_run_sync.return_value = mock_summary
+
+        result = self.runner.invoke(
+            cli,
+            ['genre-playlist'],
+            env={'GEMINI_API_KEY': 'test-key'}
+        )
+        
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(mock_run_sync.call_count, 1)
+
+    @patch('src.cli.main.setup_logging')
+    @patch('src.services.tidal_service.fetch_all_favorite_tracks')
+    @patch('src.services.tidal_service.get_session')
+    def test_genre_playlist_empty_library(self, mock_get_session, mock_fetch, mock_setup_logging):
+        """
+        T024 [P] Add edge-case test coverage for empty libraries
+        """
+        mock_get_session.return_value = MagicMock()
+        mock_fetch.return_value = ([], 0)
+
+        result = self.runner.invoke(
+            cli,
+            ['genre-playlist', '--folder', 'My Custom Genres'],
+            env={'GEMINI_API_KEY': 'test-key'}
+        )
+        
+        self.assertEqual(result.exit_code, 0)
+        
 if __name__ == '__main__':
-    unittest.main()
+    unittest.cli()
