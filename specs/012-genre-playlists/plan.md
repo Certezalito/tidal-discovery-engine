@@ -5,7 +5,7 @@
 
 ## Summary
 
-Build a new genre-organization workflow that reads the full Tidal library, uses Gemini to classify tracks into one or more genres, creates or reuses a target Tidal folder, and maintains genre playlists with sync semantics (add new tracks and remove tracks no longer in the library). Existing groundwork already covers key primitives (library fetch, Gemini recommendation/classification integration patterns, folder creation, and playlist creation), so this feature focuses on orchestration logic, deterministic sync behavior, and targeted tests.
+Build a new genre-organization workflow that reads the full Tidal library, uses Gemini to classify tracks into a single best genre match (cached locally), creates or reuses a target Tidal folder, and maintains genre playlists with sync semantics (add new tracks and remove tracks no longer in the library). Existing groundwork already covers key primitives (library fetch, Gemini recommendation/classification integration patterns, folder creation, and playlist creation), so this feature focuses on orchestration logic, local cache management, deterministic sync behavior, and targeted tests.
 
 ## Technical Context
 
@@ -13,7 +13,7 @@ Build a new genre-organization workflow that reads the full Tidal library, uses 
 
 **Primary Dependencies**: click, tidalapi, google-genai, python-dotenv; internal services in `src/services/`
 
-**Storage**: N/A (runtime-only processing of Tidal library and in-memory genre grouping)
+**Storage**: Local JSON or SQLite file for Gemini genre cache (e.g., `.tde_genre_cache.json` or `.tde_genre_cache.db`); runtime processing of Tidal library
 
 **Testing**: unittest test suite under `tests/` plus linting with `ruff check .`
 
@@ -25,7 +25,7 @@ Build a new genre-organization workflow that reads the full Tidal library, uses 
 
 **Constraints**: Must handle API paging/rate-limit realities, keep behavior non-interactive once configured, and fail gracefully with actionable logs when classification or playlist sync fails
 
-**Scale/Scope**: One new CLI workflow and service orchestration path covering full-library genre classification plus folder/playlist sync
+**Scale/Scope**: One new CLI workflow and service orchestration path covering full-library genre classification, persistent local caching, and folder/playlist sync
 
 ## Constitution Check
 
@@ -85,7 +85,8 @@ Resolved topics:
 
 - Full-library pagination and batching strategy
 - Gemini genre classification behavior and unknown handling
-- Multi-genre assignment and `Unknown` fallback semantics
+- Local cache mechanics (storage, miss/hit rules, bypassing "Unknowns")
+- Single-genre assignment and `Unknown` fallback semantics
 - Playlist sync algorithm (add new + remove deleted) without duplicate churn
 - Error-handling boundaries and logging strategy
 

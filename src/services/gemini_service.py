@@ -31,7 +31,7 @@ class GenreClassificationResult(BaseModel):
     isrc: str | None = None
     title: str | None = None
     artist: str | None = None
-    genres: list[str]
+    genre: str | None = None
 
 
 def _extract_error_code(error):
@@ -391,7 +391,7 @@ def classify_tracks_genres(api_key: str, tracks: list) -> list[dict]:
         tracks (list): A list of dicts with 'artist', 'title', 'isrc'.
         
     Returns:
-        list[dict]: A list of dicts with keys 'artist', 'title', 'isrc', 'genres'.
+        list[dict]: A list of dicts with keys 'artist', 'title', 'isrc', 'genre'.
     """
     try:
         client = genai.Client(api_key=api_key)
@@ -409,7 +409,7 @@ def classify_tracks_genres(api_key: str, tracks: list) -> list[dict]:
     full_prompt = (
         "I will provide a list of songs. "
         "For each song, identify the most appropriate musical genres. "
-        "A song can have multiple genres if appropriate. "
+        "Select exactly ONE best-match genre for each song. "
         "Return the output strictly in the requested JSON structure. "
         "Do not invent genres, use established standard genres.\n\n"
         f"SONGS:\n{seeds_text}"

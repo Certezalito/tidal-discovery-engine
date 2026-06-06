@@ -18,19 +18,19 @@ Represents a track loaded from the user’s Tidal library.
 
 ## GenreClassification
 
-Represents the classification output from Gemini for a single library track.
+Represents the classification output from Gemini or the local cache for a single library track.
 
 ### Fields
 
 - `identity_key`: Reference to `LibraryTrack.identity_key`.
-- `genres`: Zero or more normalized genre labels.
-- `classification_state`: `classified` or `unknown`.
-- `source`: `gemini`.
+- `genre`: Single normalized genre label (the best match).
+- `classification_state`: `classified`, `unknown`, or `cached`.
+- `source`: `gemini` or `cache`.
 
 ### State Rules
 
-- If `genres` is empty or unusable, state is `unknown` and the track is routed to `Unknown`.
-- If multiple genres are present, the track is mapped to each corresponding genre playlist.
+- If `genre` is empty or unusable, state is `unknown` and the track is routed to `Unknown`. The result is NOT cached.
+- If a single `genre` is present, the track is mapped to that genre playlist. The result IS cached.
 
 ## GenrePlaylistTarget
 

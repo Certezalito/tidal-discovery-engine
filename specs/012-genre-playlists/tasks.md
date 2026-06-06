@@ -34,21 +34,23 @@
 
 ## Phase 3: User Story 1 - Sort Library into Genre Playlists (Priority: P1) MVP
 
-**Goal**: Build genre playlists from the full Tidal library using Gemini, including Unknown fallback and multi-genre placement.
+**Goal**: Build genre playlists from the full Tidal library using Gemini, enforcing a single best-match genre per track, handling Unknown fallback, and caching classifications locally while bypassing Unknowns.
 
-**Independent Test**: Run the genre-playlist command against a test library and verify folder creation, genre playlists, multi-genre placement, and Unknown handling.
+**Independent Test**: Run the genre-playlist command against a test library and verify folder creation, genre playlists, single-genre placement per track, local cache creation, and Unknown handling.
 
 ### Tests for User Story 1
 
 [x] T010 [P] [US1] Add CLI test for first-run folder and genre playlist creation in tests/test_cli.py
-[x] T011 [P] [US1] Add Gemini classification test for multi-genre and Unknown fallback handling in tests/test_gemini_service.py
+[x] T011 [P] [US1] Add Gemini classification test for single best-match genre and Unknown fallback handling in tests/test_gemini_service.py
 [x] T011b [P] [US1] Add test for accuracy evaluation protocol (sample set, scoring approach) in tests/test_gemini_service.py
+[x] T011c [P] [US1] Add service test verifying local JSON/DB cache write on classification hit and bypass on Unknown miss in tests/test_genre_playlist_service.py
 
 ### Implementation for User Story 1
 
 [x] T012 [US1] Implement genre grouping and Unknown assignment from classification output in src/services/genre_playlist_service.py
+[x] T012b [US1] Implement local cache read/write adapter (file or DB) for Gemini classifications in src/services/genre_playlist_service.py
 [x] T013 [US1] Implement first-run folder and per-genre playlist creation flow in src/services/genre_playlist_service.py
-[x] T014 [US1] Implement first-run track insertion pipeline for grouped genre memberships in src/services/genre_playlist_service.py
+[x] T014 [US1] Implement first-run track insertion pipeline for grouped single-genre memberships in src/services/genre_playlist_service.py
 [x] T015 [US1] Wire CLI command path to orchestration service and options in src/cli/main.py
 [x] T016 [US1] Add progress and completion logging for scan, classify, and create steps in src/cli/main.py
 
@@ -85,6 +87,7 @@
 
 [x] T023 Update end-user usage and behavior notes for genre workflow in README.md
 [x] T024 [P] Add edge-case test coverage for empty libraries and existing non-genre playlists in tests/test_cli.py
+[x] T024b [P] Add edge-case test coverage for a corrupted or unreadable cache file in tests/test_genre_playlist_service.py
 [x] T025 [P] Add pagination/rate-limit boundary regression test for large libraries in tests/test_tidal_service.py
 [x] T026 Validate quickstart scenarios and adjust wording for observed behavior in specs/012-genre-playlists/quickstart.md
 

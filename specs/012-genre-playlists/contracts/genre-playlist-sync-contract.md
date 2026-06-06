@@ -14,9 +14,10 @@ Define expected CLI and service behavior for building and maintaining genre play
 
 ### Classification Contract
 
-- Each track is classified into zero or more genres.
-- When a track has multiple genres, it must be placed into each matching genre playlist.
+- Each track is classified into exactly one "best match" genre.
+- When a track has a successful classification, it must be stored in the local cache.
 - When no usable genre is returned, the track must be assigned to `Unknown`.
+- Tracks assigned to `Unknown` must NOT be stored in the local cache, ensuring they are re-checked on subsequent runs.
 
 ### Folder/Playlist Contract
 

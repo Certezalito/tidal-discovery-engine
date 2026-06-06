@@ -56,7 +56,7 @@ class TestGenrePlaylistService(unittest.TestCase):
             def classify_mock(api_key, batch):
                 # simulate network latency
                 time.sleep(0.01)
-                return [{"genres": ["Rock"]} for _ in batch]
+                return [{"genre": "Rock"} for _ in batch]
                 
             mock_classify.side_effect = classify_mock
             
@@ -100,6 +100,81 @@ class TestGenrePlaylistService(unittest.TestCase):
             import os
             if os.path.exists(".tde_genre_cache.json"):
                 os.remove(".tde_genre_cache.json")
+
+    def test_local_cache_write_and_bypass_unknown(self):
+        """
+        T011c [US1] Add service test verifying local JSON/DB cache write on classification hit and bypass on Unknown miss.
+        T024b [P] Add edge-case test coverage for a corrupted or unreadable cache file
+        """
+        import os
+        import json
+        from unittest.mock import patch, MagicMock
+        from src.services.genre_playlist_service import run_genre_playlist_sync
+        
+        CACHE_FILE = ".tde_genre_cache.json"
+        if os.path.exists(CACHE_FILE):
+            os.remove(CACHE_FILE)
+            
+        with patch('src.services.tidal_service.fetch_all_favorite_tracks') as mock_fetch, \
+             patch('src.services.gemini_service.classify_tracks_genres') as mock_classify, \
+             patch('src.services.tidal_service.get_or_create_folder') as mock_folder, \
+             patch('src.services.tidal_service.get_playlists_in_folder') as mock_get_pl, \
+             patch('src.services.tidal_service.create_playlist_in_folder') as mock_create_pl, \
+             patch('src.services.tidal_service.get_playlist_tracks') as mock_get_tracks, \
+             patch('src.services.tidal_service.sync_playlist_tracks') as mock_sync_tracks:
+
+            session = MagicMock()
+            
+            # Track 1 will be classified, Track 2 will be Unknown
+            t1 = MagicMock()
+            t1.id = "1"
+            t1.title = "Hit"
+            t1.artist.name = "A1"
+            t1.isrc = "ISRC1"
+            
+            t2 = MagicMock()
+            t2.id = "2"
+            t2.title = "Miss"
+            t2.artist.name = "A2"
+            t2.isrc = "ISRC2"
+                
+            mock_fetch.return_value = ([t1, t2], 1)
+            
+            def classify_mock(api_key, batch):
+                return [{"genre": "Pop"}, {"genre": None}]
+                
+            mock_classify.side_effect = classify_mock
+            mock_folder_obj = MagicMock()
+            mock_folder_obj.id = "folder1"
+            mock_folder.return_value = mock_folder_obj
+            mock_get_pl.return_value = []
+            
+            # Run 1: Test Cache Write & Unknown Bypass
+            summary = run_genre_playlist_sync(session, "Genres", api_key="dummy")
+            self.assertEqual(summary.classified_tracks, 1)
+            self.assertEqual(summary.unknown_tracks, 1)
+            
+            # Verify cache file exists and only contains the hit
+            self.assertTrue(os.path.exists(CACHE_FILE))
+            with open(CACHE_FILE, 'r') as f:
+                cache = json.load(f)
+            
+            self.assertIn("isrc:ISRC1", cache)
+            self.assertEqual(cache["isrc:ISRC1"], "Pop")
+            self.assertNotIn("isrc:ISRC2", cache) # Unknown is NOT cached
+            
+            # Test Corrupted Cache (T024b)
+            with open(CACHE_FILE, 'w') as f:
+                f.write("{invalid_json_format!!")
+                
+            # It should not crash, it should just ignore the cache and call Gemini again
+            mock_classify.reset_mock()
+            summary2 = run_genre_playlist_sync(session, "Genres", api_key="dummy")
+            self.assertEqual(summary2.classified_tracks, 1)
+            self.assertTrue(mock_classify.called) # Proves it didn't use the cache
+            
+            if os.path.exists(CACHE_FILE):
+                os.remove(CACHE_FILE)
 
 if __name__ == '__main__':
     unittest.main()

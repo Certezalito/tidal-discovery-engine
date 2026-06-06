@@ -20,13 +20,20 @@
   - Skip unknown tracks: rejected because it breaks library completeness and user trust.
   - Force single fallback genre for all uncertain tracks: rejected because `Unknown` is clearer and audit-friendly.
 
-## Decision 3: Support multi-genre placement for a single track
+## Decision 3: Enforce single-genre placement for each track
 
-- Decision: A track can belong to multiple genre playlists when Gemini returns multiple genres.
-- Rationale: This was explicitly clarified and improves discoverability for cross-genre tracks.
+- Decision: A track is assigned to exactly one genre playlist (the best match returned by Gemini).
+- Rationale: The spec was explicitly clarified to state "Primary genre only (best match)".
 - Alternatives considered:
-  - Primary-genre-only assignment: rejected because it loses relevant genre associations.
-  - Combined compound-genre playlist naming: rejected due to playlist explosion and poor usability.
+  - Multi-genre assignment: rejected because the spec clarification overrode this behavior.
+
+## Decision 3b: Cache classifications locally
+
+- Decision: Store successful Gemini classifications in a local JSON file (`.tde_genre_cache.json`). "Unknown" results will NOT be cached.
+- Rationale: Full-library classification is expensive and slow. Caching speeds up reruns (SC-003). Skipping "Unknown" caches ensures previously unclassified tracks get another chance on subsequent runs, satisfying FR-011.
+- Alternatives considered:
+  - SQLite database: rejected for now as JSON is simpler and suffices for thousands of text mappings.
+  - No caching: rejected because hitting Gemini for 5,000 tracks every run violates the <20% rerun time constraint.
 
 ## Decision 4: Implement sync semantics (add missing, remove stale)
 

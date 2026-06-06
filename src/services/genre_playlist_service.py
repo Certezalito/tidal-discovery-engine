@@ -113,17 +113,16 @@ def run_genre_playlist_sync(session, folder_name: str, api_key: str = None) -> G
     for t in tracks_to_classify:
         key = get_track_identity_key(t)
         if key in genre_cache:
-            genres = genre_cache[key]
-            if not genres:
+            genre = genre_cache[key]
+            if not genre:
                 unknown_track_ids.append(t.id)
                 summary.unknown_tracks += 1
             else:
                 summary.classified_tracks += 1
-                for genre in genres:
-                    genre_key = genre.strip()
-                    if genre_key not in genre_groups:
-                        genre_groups[genre_key] = []
-                    genre_groups[genre_key].append(t.id)
+                genre_key = genre.strip()
+                if genre_key not in genre_groups:
+                    genre_groups[genre_key] = []
+                genre_groups[genre_key].append(t.id)
         else:
             unclassified_tracks.append(t)
             
@@ -145,24 +144,23 @@ def run_genre_playlist_sync(session, folder_name: str, api_key: str = None) -> G
         
         # Merge back to original tracks based on zip/order
         for track, result in zip(batch, results):
-            genres = result.get("genres", [])
+            genre = result.get("genre")
             key = get_track_identity_key(track)
             
             # Save to cache
-            if key:
-                genre_cache[key] = genres
-                
-            if not genres:
+            if not genre:
                 unknown_track_ids.append(track.id)
                 summary.unknown_tracks += 1
             else:
+                # Save to cache only on hit
+                if key:
+                    genre_cache[key] = genre
+
                 summary.classified_tracks += 1
-                for genre in genres:
-                    # Normalize genre string for consistent keys
-                    genre_key = genre.strip()
-                    if genre_key not in genre_groups:
-                        genre_groups[genre_key] = []
-                    genre_groups[genre_key].append(track.id)
+                genre_key = genre.strip()
+                if genre_key not in genre_groups:
+                    genre_groups[genre_key] = []
+                genre_groups[genre_key].append(track.id)
 
     # Save cache if we did any API calls
     if unclassified_tracks:

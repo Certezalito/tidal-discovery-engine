@@ -25,7 +25,7 @@ class TestGeminiService(unittest.TestCase):
     class _FakeResponse:
         def __init__(self, parsed=None, candidates=None, prompt_feedback=None):
             self.parsed = parsed
-            self.candidates = candidates or []
+            self.candidates = candidates or None
             self.prompt_feedback = prompt_feedback
 
     class _FakeClientError(Exception):
@@ -107,7 +107,7 @@ class TestGeminiService(unittest.TestCase):
 
     def test_generate_with_model_retries_unusable_response_once_then_succeeds(self):
         client = MagicMock()
-        unusable = self._FakeResponse(parsed=[])
+        unusable = self._FakeResponse(parsed=None)
         usable = self._FakeResponse(parsed=[self._FakeParsed("Artist B", "Track B")])
         client.models.generate_content.side_effect = [unusable, usable]
 
@@ -124,8 +124,8 @@ class TestGeminiService(unittest.TestCase):
     def test_generate_with_model_valid_empty_fails_after_single_retry(self):
         client = MagicMock()
         client.models.generate_content.side_effect = [
-            self._FakeResponse(parsed=[]),
-            self._FakeResponse(parsed=[]),
+            self._FakeResponse(parsed=None),
+            self._FakeResponse(parsed=None),
         ]
 
         with self.assertRaises(ValueError) as ctx:
@@ -223,8 +223,8 @@ class TestGeminiService(unittest.TestCase):
         
         mock_response = self._FakeResponse(
             parsed=[
-                gemini_service.GenreClassificationResult(artist="A", title="1", isrc="isrc1", genres=["Rock", "Pop"]),
-                gemini_service.GenreClassificationResult(artist="B", title="2", isrc="isrc2", genres=[]),
+                gemini_service.GenreClassificationResult(artist="A", title="1", isrc="isrc1", genre="Rock"),
+                gemini_service.GenreClassificationResult(artist="B", title="2", isrc="isrc2", genre=None),
             ]
         )
         mock_client.models.generate_content.return_value = mock_response
@@ -237,8 +237,8 @@ class TestGeminiService(unittest.TestCase):
         results = gemini_service.classify_tracks_genres("test-key", tracks)
         
         self.assertEqual(len(results), 2)
-        self.assertEqual(results[0]["genres"], ["Rock", "Pop"])
-        self.assertEqual(results[1]["genres"], [])
+        self.assertEqual(results[0]["genre"], "Rock")
+        self.assertEqual(results[1]["genre"], None)
 
     @patch("src.services.gemini_service._read_dotenv_values", return_value={})
     @patch("src.services.gemini_service.genai.Client")
@@ -260,9 +260,9 @@ class TestGeminiService(unittest.TestCase):
         # Mock Gemini returning perfect matches
         mock_response = self._FakeResponse(
             parsed=[
-                gemini_service.GenreClassificationResult(artist="Miles Davis", title="Teardrop", isrc="1", genres=["Electronic"]),
-                gemini_service.GenreClassificationResult(artist="Metallica", title="Enter Sandman", isrc="2", genres=["Metal", "Hard Rock"]),
-                gemini_service.GenreClassificationResult(artist="Beethoven", title="So What", isrc="3", genres=["Classical"]),
+                gemini_service.GenreClassificationResult(artist="Miles Davis", title="Teardrop", isrc="1", genre="Electronic"),
+                gemini_service.GenreClassificationResult(artist="Metallica", title="Enter Sandman", isrc="2", genre="Metal"),
+                gemini_service.GenreClassificationResult(artist="Beethoven", title="So What", isrc="3", genre="Classical"),
             ]
         )
         mock_client.models.generate_content.return_value = mock_response
@@ -273,7 +273,7 @@ class TestGeminiService(unittest.TestCase):
         correct_count = 0
         for track, result in zip(sample_tracks, results):
             expected = track["expected_genres"]
-            returned = set(result["genres"])
+            returned = set([result["genre"]] if result.get("genre") else [])
             if expected.intersection(returned):
                 correct_count += 1
                 

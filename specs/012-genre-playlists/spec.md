@@ -20,7 +20,7 @@ As a user, I want to run a command that reads my entire Tidal library, categoriz
 
 **Acceptance Scenarios**:
 
-1. **Given** a user has tracks in their library and specifies a folder name, **When** the genre sorting command is executed, **Then** the system creates the folder (if it doesn't exist), creates a playlist for each identified genre within that folder, and adds the appropriate tracks to each playlist.
+1. **Given** a user has tracks in their library and specifies a folder name, **When** the genre sorting command is executed, **Then** the system creates the folder (if it doesn't exist), creates a single playlist for the best genre match for each track, and adds the tracks accordingly.
 2. **Given** a user's library has tracks with no identifiable genre, **When** the genre sorting command is executed, **Then** those tracks are placed in a default "Unknown" playlist.
 
 ---
@@ -48,13 +48,14 @@ As a user who has previously sorted my library, I want to run the command again 
 - How does the system handle API rate limits when reading a very large library (e.g., 10,000+ tracks)?
 - What happens if the specified folder already exists but contains non-genre playlists?
 - What happens if the user's library is completely empty?
+- What happens if the local genre cache gets corrupted or is unreadable?
 
 ## Clarifications
 
 ### Session 2026-06-04
 
 - Q: Which service should be used to determine the genre? → A: Use Gemini
-- Q: Should tracks with multiple genres go into multiple playlists, a primary genre playlist, or a combined genre playlist? How should missing genres be handled? → A: Add to multiple, missing to "Unknown"
+- Q: Should tracks with multiple genres go into multiple playlists, a primary genre playlist, or a combined genre playlist? How should missing genres be handled? → A: Primary genre only (best match), missing to "Unknown". Store matches to local cache, re-check "Unknowns".
 - Q: Should existing tracks in the playlists be preserved, cleared and recreated, or should we only append new tracks? → A: Sync (add new, remove deleted)
 
 ## Requirements *(mandatory)*
@@ -63,13 +64,15 @@ As a user who has previously sorted my library, I want to run the command again 
 
 - **FR-001**: System MUST be able to read all tracks from the user's Tidal library, handling pagination to ensure all tracks are retrieved.
 - **FR-002**: System MUST determine the genre(s) for each track in the library using Gemini.
-- **FR-003**: System MUST resolve cases where a track has multiple genres or no genre by adding the track to multiple genre playlists, and placing tracks with no genre into an "Unknown" playlist.
+- **FR-003**: System MUST resolve cases where a track has multiple genres by selecting the single best genre match (placing the track into exactly one genre playlist), and placing tracks with no genre into an "Unknown" playlist.
 - **FR-004**: System MUST allow the user to specify the name of the destination folder for the genre playlists via a CLI argument (which overrides configuration) or a default configuration.
 - **FR-005**: System MUST create the specified folder in the user's Tidal account if it does not already exist.
 - **FR-006**: System MUST create a playlist for each unique genre identified, placing it inside the specified folder.
 - **FR-007**: System MUST add the corresponding tracks to each genre playlist.
 - **FR-008**: System MUST update existing genre playlists if the command is run multiple times by syncing the playlists (adding new tracks and removing deleted tracks from the library).
 - **FR-009**: System MUST provide clear CLI feedback on progress, especially for large libraries (e.g., number of tracks processed, playlists created).
+- **FR-010**: System MUST cache Gemini genre matches in a local database or file to speed up subsequent runs.
+- **FR-011**: System MUST re-check Gemini for any tracks that are new or were previously classified as "Unknown" (ensuring "Unknown" is not permanently cached, to improve future searches).
 
 ### Key Entities
 
