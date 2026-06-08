@@ -1,16 +1,11 @@
 <!--
 Sync Impact Report:
-- **Version Change**: 1.3.0 → 1.4.0
+- **Version Change**: 1.4.0 → 1.5.0
 - **Modified Principles**:
-  - I. User-Centricity & Understandability: Added explicit no-guessing rule for unknown facts and source-driven clarification requirements.
-  - Technical Standards & Workflow / Quality Gates: Added evidence requirements for unresolved facts and external information.
-- **Added Sections**: None
+  - VI. AI Cost & Token Efficiency: Added principle to restrict AI output to the bare minimum to reduce token output and cost.
+- **Added Sections**: VI. AI Cost & Token Efficiency
 - **Removed Sections**: None
-- **Templates requiring updates**:
-  - .specify/templates/plan-template.md (✅ updated)
-  - .specify/templates/spec-template.md (✅ updated)
-  - .specify/templates/tasks-template.md (✅ updated)
-  - .specify/templates/commands/*.md (✅ no directory present; no command templates to update)
+- **Templates requiring updates**: None
 - **Follow-up TODOs**: None
 -->
 # Tidal Discovery Engine Constitution
@@ -49,6 +44,14 @@ The application MUST include robust error handling and logging to ensure consist
 predictable behavior, especially when running as a scheduled task. Failures MUST be
 handled gracefully and logged for diagnosis. Every behavior-changing code path MUST
 have targeted automated validation that can fail if the behavior regresses.
+
+### VI. AI Cost & Token Efficiency
+When talking with AI services like Gemini, prompts MUST restrict generated output to the
+bare minimum required for the task. This minimizes token output and overall operational
+cost.
+
+Rationale: Extraneous output from AI models increases costs and latency without adding
+value to the automated playlist generation workflow.
 
 ## Mission
 To create a personalized music discovery tool that seamlessly integrates with a
@@ -106,4 +109,4 @@ Compliance Review Expectations:
   required targeted validation, fail understandability checks, or invent unknown
   facts without authoritative verification.
 
-**Version**: 1.4.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-05-06
+**Version**: 1.5.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-06-07

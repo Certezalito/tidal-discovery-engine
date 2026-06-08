@@ -15,9 +15,23 @@ from src.lib.logging import (
     GEMINI_RESPONSE_HANDLING_FAILED,
 )
 from src.services import tidal_service, lastfm_service, gemini_service
+from src.services.genre_playlist_service import run_genre_playlist_sync
 from src.services.gemini_service import GeminiModelUnavailableError
 
-@click.command()
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx):
+    """
+    Tidal Discovery Engine CLI
+    """
+    if ctx.invoked_subcommand is None:
+        # If no subcommand is provided, run the default 'recommend' command,
+        # but this requires passing all parameters. To maintain backward compatibility
+        # without duplicating logic, we can just print a message or try to run it.
+        # However, click groups with invoke_without_command don't parse subcommand options.
+        pass
+
+@cli.command("recommend")
 @click.option("--gemini", is_flag=True, help="Use Google Gemini AI for recommendations instead of Last.fm.")
 @click.option("--num-tidal-tracks", default=10, help="The number of random favorite tracks to select from Tidal.")
 @click.option("--num-similar-tracks", default=5, type=int, help="The number of similar tracks to retrieve from Last.fm for each Tidal track.")
@@ -31,7 +45,7 @@ from src.services.gemini_service import GeminiModelUnavailableError
     is_flag=True,
     help="Exclude tracks that already exist in your Tidal favorites from playlist output.",
 )
-def main(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, artist, track, folder, exclude_favorites):
+def recommend(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, artist, track, folder, exclude_favorites):
     """
     Generates a new Tidal playlist with recommended tracks based on a selection of your favorite tracks.
     """
@@ -337,5 +351,38 @@ def main(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, a
         log_cli_error("PLAYLIST_GENERATION_FAILED", "Unhandled error during playlist generation.", details=str(e))
         raise click.ClickException(str(e))
 
-if __name__ == "__main__":
-    main()
+@cli.command("genre-playlist")
+@click.option("--folder", default="Genres", help="Destination folder name for the genre playlists. Overrides configuration.")
+@click.option("--min-genre-size", default=5, type=int, help="Minimum number of tracks required for a genre playlist. Genres with fewer tracks are grouped into an 'Others' playlist.")
+def genre_playlist_cmd(folder, min_genre_size):
+    """
+    Reads the full Tidal library, categorizes tracks by genre via Gemini,
+    and syncs genre playlists into the specified folder.
+    """
+    setup_logging()
+    logging.info(f"Starting genre playlist sync in folder '{folder}' with min genre size {min_genre_size}...")
+
+    try:
+        tidal_session = tidal_service.get_session()
+        
+        # Verify Gemini is configured (this relies on API key inside)
+        if "GEMINI_API_KEY" not in os.environ:
+            raise click.ClickException("genre-playlist requires GEMINI_API_KEY environment variable.")
+            
+        summary = run_genre_playlist_sync(tidal_session, folder, min_genre_size=min_genre_size)
+        
+        logging.info("Genre playlist sync complete.")
+        logging.info(f"Tracks scanned: {summary.library_tracks_scanned}")
+        logging.info(f"Classified tracks: {summary.classified_tracks}")
+        logging.info(f"Unknown tracks: {summary.unknown_tracks}")
+        logging.info(f"Playlists created: {summary.playlists_created}")
+        logging.info(f"Playlists updated: {summary.playlists_updated}")
+        logging.info(f"Tracks added: {summary.tracks_added}")
+        logging.info(f"Tracks removed: {summary.tracks_removed}")
+
+    except Exception as e:
+        logging.error(f"Failed to run genre-playlist: {e}")
+        raise click.ClickException(str(e))
+
+if __name__ == '__main__':
+    cli()

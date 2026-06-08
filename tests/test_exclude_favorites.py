@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from src.cli.main import main
+from src.cli.main import cli as main
 from src.services.tidal_service import FavoritesRetrievalError
 
 
@@ -79,7 +79,7 @@ class TestExcludeFavoritesCLI(unittest.TestCase):
 
         result = self.runner.invoke(
             main,
-            [
+            ['recommend', 
                 "--playlist-name",
                 "Test Playlist",
                 "--num-tidal-tracks",
@@ -148,7 +148,7 @@ class TestExcludeFavoritesCLI(unittest.TestCase):
 
         result = self.runner.invoke(
             main,
-            [
+            ['recommend', 
                 "--playlist-name",
                 "Test Playlist",
                 "--num-tidal-tracks",
@@ -210,7 +210,7 @@ class TestExcludeFavoritesCLI(unittest.TestCase):
 
         result = self.runner.invoke(
             main,
-            [
+            ['recommend', 
                 "--playlist-name",
                 "Test Playlist",
                 "--num-tidal-tracks",
@@ -263,7 +263,7 @@ class TestExcludeFavoritesCLI(unittest.TestCase):
 
         result = self.runner.invoke(
             main,
-            [
+            ['recommend', 
                 "--playlist-name",
                 "Test Playlist",
                 "--num-tidal-tracks",
@@ -311,7 +311,7 @@ class TestExcludeFavoritesCLI(unittest.TestCase):
 
         result = self.runner.invoke(
             main,
-            [
+            ['recommend', 
                 "--gemini",
                 "--playlist-name",
                 "Test Playlist",
@@ -359,7 +359,7 @@ class TestExcludeFavoritesCLI(unittest.TestCase):
 
         result = self.runner.invoke(
             main,
-            [
+            ['recommend', 
                 "--playlist-name",
                 "Test Playlist",
                 "--exclude-favorites",
@@ -401,7 +401,7 @@ class TestExcludeFavoritesCLI(unittest.TestCase):
 
         result = self.runner.invoke(
             main,
-            [
+            ['recommend', 
                 "--playlist-name",
                 "Test Playlist",
                 "--exclude-favorites",
@@ -461,6 +461,7 @@ class TestExcludeFavoritesCLI(unittest.TestCase):
                 result = self.runner.invoke(
                     main,
                     [
+                        "recommend",
                         "--playlist-name",
                         "Test Playlist",
                         "--exclude-favorites",
@@ -513,7 +514,7 @@ class TestExcludeFavoritesCLI(unittest.TestCase):
 
         result = self.runner.invoke(
             main,
-            [
+            ['recommend', 
                 "--playlist-name",
                 "Test Playlist",
                 "--num-tidal-tracks",
@@ -579,7 +580,7 @@ class TestExcludeFavoritesCLI(unittest.TestCase):
         start = time.perf_counter()
         result = self.runner.invoke(
             main,
-            [
+            ['recommend', 
                 "--playlist-name",
                 "Test Playlist",
                 "--num-tidal-tracks",

@@ -1,4 +1,5 @@
 import os
+import logging
 import json
 import random
 import time
@@ -294,6 +295,60 @@ def get_or_create_folder(session, folder_name):
             raise
         except Exception:
             raise
+
+def get_playlists_in_folder(session, folder_id):
+    """
+    Returns a list of playlists existing in the specified folder.
+    """
+    try:
+        folder = tidalapi.playlist.Folder(session, folder_id)
+        return list(folder.items())
+    except Exception as e:
+        logging.warning(f"Could not read items in folder {folder_id}: {e}")
+        return []
+
+def get_playlist_tracks(session, playlist_id):
+    """
+    Retrieves all tracks for a given playlist.
+    """
+    try:
+        playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
+        return playlist.tracks_paginated()
+    except Exception as e:
+        logging.warning(f"Could not read tracks for playlist {playlist_id}: {e}")
+        return []
+
+def sync_playlist_tracks(session, playlist_id, to_add_ids, to_remove_ids):
+    """
+    Adds and removes tracks from an existing playlist.
+    """
+    try:
+        playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
+        if to_remove_ids:
+            for i in range(0, len(to_remove_ids), 50):
+                try:
+                    playlist.delete_by_id([str(x) for x in to_remove_ids[i:i+50]])
+                except HTTPError as e:
+                    if getattr(e, 'response', None) is not None and e.response.status_code == 412:
+                        time.sleep(1)
+                        playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
+                        playlist.delete_by_id([str(x) for x in to_remove_ids[i:i+50]])
+                    else:
+                        raise
+        if to_add_ids:
+            for i in range(0, len(to_add_ids), 50):
+                try:
+                    playlist.add([str(x) for x in to_add_ids[i:i+50]])
+                except HTTPError as e:
+                    if getattr(e, 'response', None) is not None and e.response.status_code == 412:
+                        time.sleep(1)
+                        playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
+                        playlist.add([str(x) for x in to_add_ids[i:i+50]])
+                    else:
+                        raise
+    except Exception as e:
+        logging.error(f"Failed to sync playlist {playlist_id}: {e}")
+        raise
 
 def create_playlist_in_folder(session, name, description, folder_id, track_ids):
     """
