@@ -1,4 +1,5 @@
 import os
+import logging
 import json
 import random
 import time
@@ -312,8 +313,7 @@ def get_playlist_tracks(session, playlist_id):
     """
     try:
         playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
-        # tidalapi Playlist.tracks() returns the full list
-        return playlist.tracks()
+        return playlist.tracks_paginated()
     except Exception as e:
         logging.warning(f"Could not read tracks for playlist {playlist_id}: {e}")
         return []
@@ -325,10 +325,27 @@ def sync_playlist_tracks(session, playlist_id, to_add_ids, to_remove_ids):
     try:
         playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
         if to_remove_ids:
-            for track_id in to_remove_ids:
-                playlist.remove_by_id(track_id)
+            for i in range(0, len(to_remove_ids), 50):
+                try:
+                    playlist.delete_by_id([str(x) for x in to_remove_ids[i:i+50]])
+                except HTTPError as e:
+                    if getattr(e, 'response', None) is not None and e.response.status_code == 412:
+                        time.sleep(1)
+                        playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
+                        playlist.delete_by_id([str(x) for x in to_remove_ids[i:i+50]])
+                    else:
+                        raise
         if to_add_ids:
-            playlist.add(to_add_ids)
+            for i in range(0, len(to_add_ids), 50):
+                try:
+                    playlist.add([str(x) for x in to_add_ids[i:i+50]])
+                except HTTPError as e:
+                    if getattr(e, 'response', None) is not None and e.response.status_code == 412:
+                        time.sleep(1)
+                        playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
+                        playlist.add([str(x) for x in to_add_ids[i:i+50]])
+                    else:
+                        raise
     except Exception as e:
         logging.error(f"Failed to sync playlist {playlist_id}: {e}")
         raise

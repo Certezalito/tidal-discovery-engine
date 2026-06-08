@@ -8,10 +8,11 @@
 
 **Purpose**: Establish CLI entry points and service scaffolding for genre-playlist workflow.
 
-[x] T001 Add genre-playlist CLI options and command path in src/cli/main.py
-[x] T002 Add genre-playlist logging constants and helper messages in src/lib/logging.py
-[x] T003 Create orchestration scaffold for genre playlist runs in src/services/genre_playlist_service.py
-[x] T003b [P] [US1] Add CLI test for folder name precedence (CLI argument overrides configuration) in tests/test_cli.py
+- [x] T001 Add genre-playlist CLI options and command path in src/cli/main.py
+[x] T001b Add `--min-genre-size` CLI option with default of 2 in src/cli/main.py
+- [x] T002 Add genre-playlist logging constants and helper messages in src/lib/logging.py
+- [x] T003 Create orchestration scaffold for genre playlist runs in src/services/genre_playlist_service.py
+- [x] T003b [P] [US1] Add CLI test for folder name precedence (CLI argument overrides configuration) in tests/test_cli.py
 
 ---
 
@@ -21,12 +22,12 @@
 
 **CRITICAL**: Complete this phase before starting user-story work.
 
-[x] T004 Implement full-library retrieval with pagination/retry in src/services/tidal_service.py
-[x] T005 Implement Gemini genre classification adapter for library tracks in src/services/gemini_service.py
-[x] T006 Implement track identity normalization utilities for sync comparison in src/services/tidal_service.py
-[x] T007 Implement folder playlist discovery helpers for deterministic genre playlist resolution in src/services/tidal_service.py
-[x] T008 Implement reusable playlist membership read helpers for sync operations in src/services/tidal_service.py
-[x] T009 Implement orchestration-level run summary model for scan/classify/create/sync metrics in src/services/genre_playlist_service.py
+- [x] T004 Implement full-library retrieval with pagination/retry in src/services/tidal_service.py
+- [x] T005 Implement Gemini genre classification adapter for library tracks in src/services/gemini_service.py
+- [x] T006 Implement track identity normalization utilities for sync comparison in src/services/tidal_service.py
+- [x] T007 Implement folder playlist discovery helpers for deterministic genre playlist resolution in src/services/tidal_service.py
+- [x] T008 Implement reusable playlist membership read helpers for sync operations in src/services/tidal_service.py
+- [x] T009 Implement orchestration-level run summary model for scan/classify/create/sync metrics in src/services/genre_playlist_service.py
 
 **Checkpoint**: Foundation ready. User stories can proceed.
 
@@ -34,25 +35,29 @@
 
 ## Phase 3: User Story 1 - Sort Library into Genre Playlists (Priority: P1) MVP
 
-**Goal**: Build genre playlists from the full Tidal library using Gemini, enforcing a single best-match genre per track, handling Unknown fallback, and caching classifications locally while bypassing Unknowns.
+**Goal**: Build genre playlists from the full Tidal library using Gemini, enforcing a single best-match genre per track, handling Unknown fallback, grouping niche genres into "Others", sorting by ascending track count, and caching classifications locally while bypassing Unknowns.
 
-**Independent Test**: Run the genre-playlist command against a test library and verify folder creation, genre playlists, single-genre placement per track, local cache creation, and Unknown handling.
+**Independent Test**: Run the genre-playlist command against a test library and verify folder creation, genre playlists, single-genre placement per track, local cache creation, Unknown handling, "Others" grouping threshold, and ascending track count processing order.
 
 ### Tests for User Story 1
 
-[x] T010 [P] [US1] Add CLI test for first-run folder and genre playlist creation in tests/test_cli.py
-[x] T011 [P] [US1] Add Gemini classification test for single best-match genre and Unknown fallback handling in tests/test_gemini_service.py
-[x] T011b [P] [US1] Add test for accuracy evaluation protocol (sample set, scoring approach) in tests/test_gemini_service.py
-[x] T011c [P] [US1] Add service test verifying local JSON/DB cache write on classification hit and bypass on Unknown miss in tests/test_genre_playlist_service.py
+- [x] T010 [P] [US1] Add CLI test for first-run folder and genre playlist creation in tests/test_cli.py
+[x] T010b [P] [US1] Add CLI test for `--min-genre-size` threshold grouping into "Others" in tests/test_cli.py
+- [x] T011 [P] [US1] Add Gemini classification test for single best-match genre and Unknown fallback handling in tests/test_gemini_service.py
+- [x] T011b [P] [US1] Add test for accuracy evaluation protocol (sample set, scoring approach) in tests/test_gemini_service.py
+- [x] T011c [P] [US1] Add service test verifying local JSON/DB cache write on classification hit and bypass on Unknown miss in tests/test_genre_playlist_service.py
+[x] T011d [P] [US1] Add service test verifying playlist orchestration executes in ascending track count order in tests/test_genre_playlist_service.py
 
 ### Implementation for User Story 1
 
-[x] T012 [US1] Implement genre grouping and Unknown assignment from classification output in src/services/genre_playlist_service.py
-[x] T012b [US1] Implement local cache read/write adapter (file or DB) for Gemini classifications in src/services/genre_playlist_service.py
-[x] T013 [US1] Implement first-run folder and per-genre playlist creation flow in src/services/genre_playlist_service.py
-[x] T014 [US1] Implement first-run track insertion pipeline for grouped single-genre memberships in src/services/genre_playlist_service.py
-[x] T015 [US1] Wire CLI command path to orchestration service and options in src/cli/main.py
-[x] T016 [US1] Add progress and completion logging for scan, classify, and create steps in src/cli/main.py
+- [x] T012 [US1] Implement genre grouping and Unknown assignment from classification output in src/services/genre_playlist_service.py
+- [x] T012b [US1] Implement local cache read/write adapter (file or DB) for Gemini classifications in src/services/genre_playlist_service.py
+[x] T012c [US1] Implement "Others" grouping logic for genre groups below the `--min-genre-size` threshold in src/services/genre_playlist_service.py
+[x] T012d [US1] Implement sorting of genre groups by ascending track count prior to playlist processing in src/services/genre_playlist_service.py
+- [x] T013 [US1] Implement first-run folder and per-genre playlist creation flow in src/services/genre_playlist_service.py
+- [x] T014 [US1] Implement first-run track insertion pipeline for grouped single-genre memberships in src/services/genre_playlist_service.py
+- [x] T015 [US1] Wire CLI command path to orchestration service and options in src/cli/main.py
+- [x] T016 [US1] Add progress and completion logging for scan, classify, and create steps in src/cli/main.py
 
 **Checkpoint**: User Story 1 independently functional and demoable.
 
@@ -60,22 +65,22 @@
 
 ## Phase 4: User Story 2 - Update Existing Genre Playlists (Priority: P2)
 
-**Goal**: Re-run the command and sync existing genre playlists by adding new library tracks and removing tracks no longer in the library.
+**Goal**: Re-run the command and sync existing genre playlists by adding new library tracks and removing tracks no longer in the library, processing in ascending track count order.
 
 **Independent Test**: Run command once, change library membership, run again, and verify playlist membership matches desired genre sets with no duplicates.
 
 ### Tests for User Story 2
 
-[x] T017 [P] [US2] Add service test for sync delta calculation add/remove semantics in tests/test_tidal_service.py
-[x] T018 [P] [US2] Add CLI rerun test verifying no duplicate playlists and synced membership in tests/test_cli.py
-[x] T018b [P] [US2] Add benchmarking task to measure rerun sync runtime (must be <20% of initial run) in tests/test_genre_playlist_service.py
+- [x] T017 [P] [US2] Add service test for sync delta calculation add/remove semantics in tests/test_tidal_service.py
+- [x] T018 [P] [US2] Add CLI rerun test verifying no duplicate playlists and synced membership in tests/test_cli.py
+- [x] T018b [P] [US2] Add benchmarking task to measure rerun sync runtime (must be <20% of initial run) in tests/test_genre_playlist_service.py
 
 ### Implementation for User Story 2
 
-[x] T019 [US2] Implement desired-vs-existing membership diff generation per genre playlist in src/services/genre_playlist_service.py
-[x] T020 [US2] Implement per-playlist sync operations for additions and removals in src/services/tidal_service.py
-[x] T021 [US2] Integrate rerun sync orchestration with idempotence safeguards in src/services/genre_playlist_service.py
-[x] T022 [US2] Add rerun summary metrics for playlists updated, tracks added, and tracks removed in src/cli/main.py
+- [x] T019 [US2] Implement desired-vs-existing membership diff generation per genre playlist in src/services/genre_playlist_service.py
+- [x] T020 [US2] Implement per-playlist sync operations for additions and removals in src/services/tidal_service.py
+- [x] T021 [US2] Integrate rerun sync orchestration with idempotence safeguards in src/services/genre_playlist_service.py
+- [x] T022 [US2] Add rerun summary metrics for playlists updated, tracks added, and tracks removed in src/cli/main.py
 
 **Checkpoint**: User Stories 1 and 2 both functional independently.
 
@@ -85,11 +90,12 @@
 
 **Purpose**: Final quality, documentation, and resilience checks.
 
-[x] T023 Update end-user usage and behavior notes for genre workflow in README.md
-[x] T024 [P] Add edge-case test coverage for empty libraries and existing non-genre playlists in tests/test_cli.py
-[x] T024b [P] Add edge-case test coverage for a corrupted or unreadable cache file in tests/test_genre_playlist_service.py
-[x] T025 [P] Add pagination/rate-limit boundary regression test for large libraries in tests/test_tidal_service.py
-[x] T026 Validate quickstart scenarios and adjust wording for observed behavior in specs/012-genre-playlists/quickstart.md
+- [x] T023 Update end-user usage and behavior notes for genre workflow in README.md
+[x] T023b Update README.md to document `--min-genre-size` usage, "Others" grouping, and "Updated date" sorting behavior
+- [x] T024 [P] Add edge-case test coverage for empty libraries and existing non-genre playlists in tests/test_cli.py
+- [x] T024b [P] Add edge-case test coverage for a corrupted or unreadable cache file in tests/test_genre_playlist_service.py
+- [x] T025 [P] Add pagination/rate-limit boundary regression test for large libraries in tests/test_tidal_service.py
+- [x] T026 Validate quickstart scenarios and adjust wording for observed behavior in specs/012-genre-playlists/quickstart.md
 
 ---
 

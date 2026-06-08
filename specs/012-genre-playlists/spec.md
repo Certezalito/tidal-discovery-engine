@@ -20,8 +20,9 @@ As a user, I want to run a command that reads my entire Tidal library, categoriz
 
 **Acceptance Scenarios**:
 
-1. **Given** a user has tracks in their library and specifies a folder name, **When** the genre sorting command is executed, **Then** the system creates the folder (if it doesn't exist), creates a single playlist for the best genre match for each track, and adds the tracks accordingly.
+1. **Given** a user has tracks in their library and specifies a folder name, **When** the genre sorting command is executed, **Then** the system creates the folder (if it doesn't exist), creates a single playlist for the best genre match for each track (grouping sparse genres into an "Others" playlist if below a configurable threshold), and adds the tracks accordingly.
 2. **Given** a user's library has tracks with no identifiable genre, **When** the genre sorting command is executed, **Then** those tracks are placed in a default "Unknown" playlist.
+3. **Given** genre playlists are being created or updated, **When** the command completes, **Then** the playlists are updated in ascending order of their track count so that sorting by "Updated date" (descending) in the Tidal client lists the largest playlists first.
 
 ---
 
@@ -58,6 +59,12 @@ As a user who has previously sorted my library, I want to run the command again 
 - Q: Should tracks with multiple genres go into multiple playlists, a primary genre playlist, or a combined genre playlist? How should missing genres be handled? → A: Primary genre only (best match), missing to "Unknown". Store matches to local cache, re-check "Unknowns".
 - Q: Should existing tracks in the playlists be preserved, cleared and recreated, or should we only append new tracks? → A: Sync (add new, remove deleted)
 
+### Session 2026-06-07
+
+- Q: How can we limit playlist sprawl for very niche genres? → A: Support a threshold (e.g., under 5 tracks) and group them into an "Others" playlist.
+- Q: Can we sort playlists by track count natively in Tidal? → A: Yes, by updating them in ascending track count order, the "Updated date" sort option in Tidal will list the largest playlists first.
+- Q: How should the "Others" threshold be configured? → A: CLI argument (`--min-genre-size`) with a default of 2 (genres with 1 track go to Others).
+
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
@@ -73,6 +80,8 @@ As a user who has previously sorted my library, I want to run the command again 
 - **FR-009**: System MUST provide clear CLI feedback on progress, especially for large libraries (e.g., number of tracks processed, playlists created).
 - **FR-010**: System MUST cache Gemini genre matches in a local database or file to speed up subsequent runs.
 - **FR-011**: System MUST re-check Gemini for any tracks that are new or were previously classified as "Unknown" (ensuring "Unknown" is not permanently cached, to improve future searches).
+- **FR-012**: System MUST allow configuring a minimum track threshold via a CLI argument (e.g., `--min-genre-size`) with a default of 5 (meaning genres with 4 or fewer tracks are grouped into an "Others" playlist).
+- **FR-013**: System MUST process playlist updates in ascending order of their final track counts, so that sorting the folder by "Updated date" (descending) in the Tidal client displays the largest playlists first.
 
 ### Key Entities
 

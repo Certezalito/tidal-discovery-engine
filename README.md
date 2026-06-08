@@ -149,23 +149,25 @@ Expected outcome: A playlist of 20 underground, lesser-known tracks inspired by 
 
 Reads your entire Tidal library, uses Gemini to classify each track by genre, and creates or syncs one playlist per genre inside a dedicated folder. This mode helps you organize your entire library automatically.
 
-**First Run & Syncing** — organize your library into a folder named "Genres":
+**First Run & Syncing** — organize your library into a folder named "Genres" (the default folder name) with the default minimum genre size (5 tracks):
 
 ```bash
 uv run python -m src.cli.main genre-playlist
 ```
 
-**Custom Folder** — organize your library into a specific folder:
+**Custom Folder & Threshold** — organize into a specific folder and group genres with fewer than 10 tracks into an "Others" playlist:
 
 ```bash
-uv run python -m src.cli.main genre-playlist --folder "My Music Styles"
+uv run python -m src.cli.main genre-playlist --folder "My Music Styles" --min-genre-size 10
 ```
 
-Expected outcome: A folder is created (or reused), containing playlists for each genre identified in your library. Tracks with ambiguous or unidentifiable genres are placed into an "Unknown" playlist.
+Expected outcome: A folder is created (or reused), containing playlists for each genre identified in your library that meets the minimum track threshold. Tracks with highly niche genres (falling below the threshold) are consolidated into an "Others" playlist. Tracks with ambiguous or unidentifiable genres are placed into an "Unknown" playlist.
 
 **Mode 4 notes:**
 - Re-running the command syncs the existing playlists by adding new tracks and removing tracks that are no longer in your library, without creating duplicates.
-- Multi-genre tracks are added to all applicable genre playlists.
+- **Local Caching:** Classification results are cached locally in `.tde_genre_cache.json`. This significantly speeds up subsequent runs by only asking Gemini to classify new tracks or tracks that were previously "Unknown".
+- The command groups genres with fewer tracks than `--min-genre-size` into an "Others" playlist to limit playlist sprawl. The default threshold is 5 (so genres with 4 or fewer tracks go to "Others").
+- Playlists are processed and synced in ascending track count order. This forces Tidal to list the largest playlists first when you sort the folder by "Updated date" descending in the Tidal client.
 - This command uses `GEMINI_API_KEY` and requires a stable connection capable of retrieving large libraries.
 
 ## All Parameters
@@ -180,7 +182,8 @@ Expected outcome: A folder is created (or reused), containing playlists for each
 | `--track` | Track title for single-seed mode (Mode 3). **Must be used with `--artist`**. | — | No |
 | `--exclude-favorites` | Exclude tracks already present in your Tidal favorites from the final playlist output. | `False` | No |
 | `--playlist-name` | Name for the new Tidal playlist. Use `{date}` to insert the current date (YYYYMMDD format). | — | **Yes** (Modes 1-3) |
-| `--folder` | Tidal folder to place the playlist in. Created automatically if it does not exist. | `Genres` | No |
+| `--folder` | Tidal folder to place the playlist in. Created automatically if it does not exist. Default is "Genres" for Mode 4. | `Genres` | No |
+| `--min-genre-size` | Minimum number of tracks required for a genre playlist in Mode 4. Genres with fewer tracks are grouped into 'Others'. | `5` | No |
 
 **Constraints:**
 
@@ -303,7 +306,7 @@ This project was developed using a unique, AI-driven workflow inside Visual Stud
 The primary tools used were:
 
 *   **GitHub Copilot:** Used as the core AI assistant for generating and refining code.
-*   **Gemini 2.5/3.0 Pro:** Integrated for advanced reasoning and to help guide the development process.  Followup branches could be any AI available within GitHub Copilot
+*   **Multiple AI Models:** Integrated for advanced reasoning and to help guide the development process.  Followup branches could be any AI available within GitHub Copilot
 *   **Spec Kit:** A set of prompts and scripts that enforce a rigorous, specification-driven development process. This included generating a constitution, a detailed specification, a project plan, and a task list before any code was written.
 
 This approach ensured that the project was well-defined, robust, and implemented efficiently, with the AI agents handling the heavy lifting of code generation and iteration.

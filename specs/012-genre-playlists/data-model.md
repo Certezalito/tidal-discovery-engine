@@ -32,6 +32,18 @@ Represents the classification output from Gemini or the local cache for a single
 - If `genre` is empty or unusable, state is `unknown` and the track is routed to `Unknown`. The result is NOT cached.
 - If a single `genre` is present, the track is mapped to that genre playlist. The result IS cached.
 
+## GenreGroup
+
+Represents the intermediate grouping of tracks by genre before creating targets.
+
+### Fields
+
+- `genre_label`: Canonical genre key.
+- `track_keys`: Set of track identity keys belonging to this genre.
+
+### State Rules
+- If the count of `track_keys` is strictly less than the CLI-configured minimum threshold, the group is absorbed into the `Others` group.
+
 ## GenrePlaylistTarget
 
 Represents desired playlist membership for a specific genre.

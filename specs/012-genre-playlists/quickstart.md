@@ -7,8 +7,9 @@ A CLI workflow that:
 - Reads your full Tidal library
 - Uses Gemini to classify tracks into genres
 - Creates/uses a target folder
-- Creates genre playlists (plus `Unknown` when needed)
+- Creates genre playlists (plus `Unknown` and `Others` when needed)
 - Syncs playlists on rerun (add new, remove stale)
+- Caches classification results locally to speed up subsequent runs
 
 ## Prerequisites
 
@@ -49,10 +50,11 @@ Expected outcome:
 ## Validation Checklist
 
 - Full library was scanned (not a partial subset)
-- Multi-genre tracks appear in multiple genre playlists
+- Tracks are assigned to their single best-match genre playlist
+- Niche genres below the threshold are consolidated into `Others`
 - Unknown classifications appear in `Unknown`
 - No duplicate playlists created on rerun
-- Sync operation reflects current library state
+- Sync operation reflects current library state (additions/removals)
 
 ## References
 

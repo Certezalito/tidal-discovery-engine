@@ -25,7 +25,7 @@ Build a new genre-organization workflow that reads the full Tidal library, uses 
 
 **Constraints**: Must handle API paging/rate-limit realities, keep behavior non-interactive once configured, and fail gracefully with actionable logs when classification or playlist sync fails
 
-**Scale/Scope**: One new CLI workflow and service orchestration path covering full-library genre classification, persistent local caching, and folder/playlist sync
+**Scale/Scope**: One new CLI workflow and service orchestration path covering full-library genre classification, persistent local caching, configured minimum track thresholds for playlists, and ordered folder/playlist sync
 
 ## Constitution Check
 
@@ -87,6 +87,8 @@ Resolved topics:
 - Gemini genre classification behavior and unknown handling
 - Local cache mechanics (storage, miss/hit rules, bypassing "Unknowns")
 - Single-genre assignment and `Unknown` fallback semantics
+- Minimizing playlist sprawl via size thresholds (grouping into "Others")
+- Ordered playlist sync to leverage Tidal's native "Updated date" sorting
 - Playlist sync algorithm (add new + remove deleted) without duplicate churn
 - Error-handling boundaries and logging strategy
 

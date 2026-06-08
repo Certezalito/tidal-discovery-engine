@@ -60,7 +60,7 @@ def _save_cache(cache):
         import logging
         logging.warning(f"Failed to save genre cache: {e}")
 
-def run_genre_playlist_sync(session, folder_name: str, api_key: str = None) -> GenreRunSummary:
+def run_genre_playlist_sync(session, folder_name: str, api_key: str = None, min_genre_size: int = 5) -> GenreRunSummary:
     """
     Orchestrates the full genre playlist sync workflow.
     """
@@ -166,8 +166,22 @@ def run_genre_playlist_sync(session, folder_name: str, api_key: str = None) -> G
     if unclassified_tracks:
         _save_cache(genre_cache)
 
+    # T012c [US1] Implement "Others" grouping logic
+    others_track_ids = []
+    final_genre_groups = {}
+    for genre_name, track_ids in genre_groups.items():
+        # Do not group 'Unknown' into 'Others' if it was explicitly added earlier, 
+        # though unknown tracks are only added after this logic normally. Wait, let's group unknown later.
+        if len(track_ids) < min_genre_size:
+            others_track_ids.extend(track_ids)
+        else:
+            final_genre_groups[genre_name] = track_ids
+            
+    if others_track_ids:
+        final_genre_groups["Others"] = others_track_ids
+
     if unknown_track_ids:
-        genre_groups["Unknown"] = unknown_track_ids
+        final_genre_groups["Unknown"] = unknown_track_ids
 
     logging.info(f"Classification complete. Resolving folder '{folder_name}'...")
     folder = get_or_create_folder(session, folder_name)
@@ -177,9 +191,12 @@ def run_genre_playlist_sync(session, folder_name: str, api_key: str = None) -> G
     # Ensure lowercase comparison
     playlist_map = {p.name.lower(): p for p in existing_playlists if p.name}
     
-    logging.info(f"Syncing {len(genre_groups)} genre playlists...")
+    logging.info(f"Syncing {len(final_genre_groups)} genre playlists...")
     
-    for genre_name, desired_track_ids in genre_groups.items():
+    # T012d [US1] Implement sorting of genre groups by ascending track count
+    sorted_genre_groups = sorted(final_genre_groups.items(), key=lambda item: len(item[1]))
+    
+    for genre_name, desired_track_ids in sorted_genre_groups:
         search_name = genre_name.lower()
         if search_name in playlist_map:
             # Sync existing

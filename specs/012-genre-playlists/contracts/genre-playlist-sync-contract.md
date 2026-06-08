@@ -22,13 +22,15 @@ Define expected CLI and service behavior for building and maintaining genre play
 ### Folder/Playlist Contract
 
 - If destination folder does not exist, create it.
-- For every discovered genre (and `Unknown` when needed), create or resolve a playlist in that folder.
+- After classification, genres containing fewer tracks than the configured threshold (default 2) must be grouped into an `Others` playlist.
+- For every discovered genre that meets the threshold (plus `Unknown` and `Others` when needed), create or resolve a playlist in that folder.
 - Playlist naming must be deterministic for repeated runs.
 
 ### Sync Contract
 
 For each genre playlist on rerun:
 
+- Playlist creation and sync operations must be executed in ascending order of their desired track count.
 - `to_add = desired_membership - existing_membership`
 - `to_remove = existing_membership - desired_membership`
 - Apply both sets so final membership matches desired state.

@@ -178,3 +178,139 @@ class TestGenrePlaylistService(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+    def test_ascending_track_count_order(self):
+        """
+        T011d [P] [US1] Add service test verifying playlist orchestration executes in ascending track count order
+        """
+        import os
+        import json
+        from unittest.mock import patch, MagicMock
+        from src.services.genre_playlist_service import run_genre_playlist_sync
+        
+        CACHE_FILE = ".tde_genre_cache.json"
+        if os.path.exists(CACHE_FILE):
+            os.remove(CACHE_FILE)
+            
+        with patch('src.services.tidal_service.fetch_all_favorite_tracks') as mock_fetch, \
+             patch('src.services.gemini_service.classify_tracks_genres') as mock_classify, \
+             patch('src.services.tidal_service.get_or_create_folder') as mock_folder, \
+             patch('src.services.tidal_service.get_playlists_in_folder') as mock_get_pl, \
+             patch('src.services.tidal_service.create_playlist_in_folder') as mock_create_pl:
+
+            session = MagicMock()
+            
+            # 6 tracks total:
+            # 1 in Jazz
+            # 2 in Rock
+            # 3 in Pop
+            tracks = []
+            for i in range(6):
+                t = MagicMock()
+                t.id = str(i)
+                t.title = f"Title {i}"
+                t.artist.name = "Artist"
+                t.isrc = f"ISRC{i}"
+                tracks.append(t)
+                
+            mock_fetch.return_value = (tracks, 1)
+            
+            def classify_mock(api_key, batch):
+                # 0: Jazz
+                # 1,2: Rock
+                # 3,4,5: Pop
+                return [
+                    {"genre": "Jazz"},
+                    {"genre": "Rock"},
+                    {"genre": "Rock"},
+                    {"genre": "Pop"},
+                    {"genre": "Pop"},
+                    {"genre": "Pop"},
+                ]
+                
+            mock_classify.side_effect = classify_mock
+            mock_folder_obj = MagicMock()
+            mock_folder_obj.id = "folder1"
+            mock_folder.return_value = mock_folder_obj
+            mock_get_pl.return_value = []
+            
+            run_genre_playlist_sync(session, "Genres", min_genre_size=1)
+            
+            self.assertEqual(mock_create_pl.call_count, 3)
+            # Should be called in order: Jazz (1), Rock (2), Pop (3)
+            # Actually, calculate_sync_delta determines the desired_track_ids count
+            calls = mock_create_pl.call_args_list
+            self.assertEqual(calls[0].kwargs['name'], 'Jazz')
+            self.assertEqual(calls[1].kwargs['name'], 'Rock')
+            self.assertEqual(calls[2].kwargs['name'], 'Pop')
+            
+            if os.path.exists(CACHE_FILE):
+                os.remove(CACHE_FILE)
+
+    def test_others_grouping(self):
+        """
+        T010b [P] [US1] Add CLI test for `--min-genre-size` threshold grouping into "Others"
+        Since we test the service directly here, we can test the grouping logic as T012c.
+        """
+        import os
+        from unittest.mock import patch, MagicMock
+        from src.services.genre_playlist_service import run_genre_playlist_sync
+        
+        CACHE_FILE = ".tde_genre_cache.json"
+        if os.path.exists(CACHE_FILE):
+            os.remove(CACHE_FILE)
+            
+        with patch('src.services.tidal_service.fetch_all_favorite_tracks') as mock_fetch, \
+             patch('src.services.gemini_service.classify_tracks_genres') as mock_classify, \
+             patch('src.services.tidal_service.get_or_create_folder') as mock_folder, \
+             patch('src.services.tidal_service.get_playlists_in_folder') as mock_get_pl, \
+             patch('src.services.tidal_service.create_playlist_in_folder') as mock_create_pl:
+
+            session = MagicMock()
+            
+            # 4 tracks total:
+            # 1 in Jazz
+            # 1 in Blues
+            # 2 in Pop
+            tracks = []
+            for i in range(4):
+                t = MagicMock()
+                t.id = str(i)
+                t.title = f"Title {i}"
+                t.artist.name = "Artist"
+                t.isrc = f"ISRC{i}"
+                tracks.append(t)
+                
+            mock_fetch.return_value = (tracks, 1)
+            
+            def classify_mock(api_key, batch):
+                return [
+                    {"genre": "Jazz"},
+                    {"genre": "Blues"},
+                    {"genre": "Pop"},
+                    {"genre": "Pop"},
+                ]
+                
+            mock_classify.side_effect = classify_mock
+            mock_folder_obj = MagicMock()
+            mock_folder_obj.id = "folder1"
+            mock_folder.return_value = mock_folder_obj
+            mock_get_pl.return_value = []
+            
+            # Min genre size 2. Jazz and Blues should become Others (size 2), Pop (size 2).
+            # Order will be Pop (2), Others (2) or Others (2), Pop (2) because sizes are equal.
+            # But the important thing is 'Others' contains 2 tracks and Jazz/Blues don't exist.
+            run_genre_playlist_sync(session, "Genres", min_genre_size=2)
+            
+            calls = mock_create_pl.call_args_list
+            created_names = [call.kwargs['name'] for call in calls]
+            self.assertEqual(len(created_names), 2)
+            self.assertIn('Others', created_names)
+            self.assertIn('Pop', created_names)
+            
+            for call in calls:
+                if call.kwargs['name'] == 'Others':
+                    self.assertEqual(len(call.kwargs['track_ids']), 2)
+            
+            if os.path.exists(CACHE_FILE):
+                os.remove(CACHE_FILE)

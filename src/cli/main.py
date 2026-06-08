@@ -353,13 +353,14 @@ def recommend(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_na
 
 @cli.command("genre-playlist")
 @click.option("--folder", default="Genres", help="Destination folder name for the genre playlists. Overrides configuration.")
-def genre_playlist_cmd(folder):
+@click.option("--min-genre-size", default=5, type=int, help="Minimum number of tracks required for a genre playlist. Genres with fewer tracks are grouped into an 'Others' playlist.")
+def genre_playlist_cmd(folder, min_genre_size):
     """
     Reads the full Tidal library, categorizes tracks by genre via Gemini,
     and syncs genre playlists into the specified folder.
     """
     setup_logging()
-    logging.info(f"Starting genre playlist sync in folder '{folder}'...")
+    logging.info(f"Starting genre playlist sync in folder '{folder}' with min genre size {min_genre_size}...")
 
     try:
         tidal_session = tidal_service.get_session()
@@ -368,7 +369,7 @@ def genre_playlist_cmd(folder):
         if "GEMINI_API_KEY" not in os.environ:
             raise click.ClickException("genre-playlist requires GEMINI_API_KEY environment variable.")
             
-        summary = run_genre_playlist_sync(tidal_session, folder)
+        summary = run_genre_playlist_sync(tidal_session, folder, min_genre_size=min_genre_size)
         
         logging.info("Genre playlist sync complete.")
         logging.info(f"Tracks scanned: {summary.library_tracks_scanned}")
