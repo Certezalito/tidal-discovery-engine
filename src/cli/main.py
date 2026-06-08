@@ -18,18 +18,12 @@ from src.services import tidal_service, lastfm_service, gemini_service
 from src.services.genre_playlist_service import run_genre_playlist_sync
 from src.services.gemini_service import GeminiModelUnavailableError
 
-@click.group(invoke_without_command=True)
-@click.pass_context
-def cli(ctx):
+@click.group()
+def cli():
     """
     Tidal Discovery Engine CLI
     """
-    if ctx.invoked_subcommand is None:
-        # If no subcommand is provided, run the default 'recommend' command,
-        # but this requires passing all parameters. To maintain backward compatibility
-        # without duplicating logic, we can just print a message or try to run it.
-        # However, click groups with invoke_without_command don't parse subcommand options.
-        pass
+    pass
 
 @cli.command("recommend")
 @click.option("--gemini", is_flag=True, help="Use Google Gemini AI for recommendations instead of Last.fm.")

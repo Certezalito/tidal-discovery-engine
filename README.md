@@ -33,35 +33,39 @@ A command-line tool that generates Tidal playlists with recommended tracks using
 4. Run the script once interactively to authenticate with Tidal:
 
     ```bash
-    uv run python -m src.cli.main --playlist-name "Test"
+    uv run python -m src.cli.main recommend --playlist-name "Test"
     ```
 
     This creates a `tidal_session.json` file in the project root, which is reused for all future non-interactive runs.
 
-## Modes
+## Commands
 
-The CLI supports three modes of operation. Each mode can be combined with `--shuffle` to change recommendation behavior, and with `--folder` to organize playlists into a Tidal folder.
+The CLI supports two primary commands: `recommend` and `genre-playlist`. Each command has its own set of options.
+
+### `recommend`
+
+Generates a new Tidal playlist with recommended tracks based on a selection of your favorite tracks or a specific seed track.
 
 **Quick start** — generate a playlist from your Tidal favorites using Last.fm recommendations:
 
 ```bash
-uv run python -m src.cli.main --playlist-name "TDE {date}"
+uv run python -m src.cli.main recommend --playlist-name "TDE {date}"
 ```
 
 To exclude tracks you already saved in Tidal favorites from the resulting playlist:
 
 ```bash
-uv run python -m src.cli.main --playlist-name "TDE {date}" --exclude-favorites
+uv run python -m src.cli.main recommend --playlist-name "TDE {date}" --exclude-favorites
 ```
 
-### Mode 1: Last.fm Recommendations (Default)
+#### Last.fm Path (Default)
 
 Selects random tracks from your Tidal favorites and finds similar music through Last.fm.
 
 **Without `--shuffle`** — returns the top similar tracks per seed:
 
 ```bash
-uv run python -m src.cli.main --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}" --folder "Tidal Discovery Engine"
+uv run python -m src.cli.main recommend --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}" --folder "Tidal Discovery Engine"
 ```
 
 Expected outcome: A playlist with up to 50 tracks (5 seeds × 10 similar each) of popular similar music.
@@ -69,19 +73,19 @@ Expected outcome: A playlist with up to 50 tracks (5 seeds × 10 similar each) o
 **With `--shuffle`** — fetches a large pool (up to 1000 per seed) and randomly selects from it for deeper cuts:
 
 ```bash
-uv run python -m src.cli.main --shuffle --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}" --folder "Tidal Discovery Engine"
+uv run python -m src.cli.main recommend --shuffle --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}" --folder "Tidal Discovery Engine"
 ```
 
 Expected outcome: A playlist with up to 50 tracks randomly drawn from a much larger pool, producing more varied and unexpected recommendations.
 
-### Mode 2: Gemini AI Recommendations
+#### Gemini AI Path
 
-Uses Google Gemini AI instead of Last.fm to generate recommendations from your Tidal favorites.
+Uses Google Gemini AI instead of Last.fm to generate recommendations. Requires `GEMINI_API_KEY`.
 
 **Without `--shuffle`** — generates popular, highly relevant suggestions:
 
 ```bash
-uv run python -m src.cli.main --gemini --playlist-name "TDE Gemini Hits" --folder "Tidal Discovery Engine"
+uv run python -m src.cli.main recommend --gemini --playlist-name "TDE Gemini Hits" --folder "Tidal Discovery Engine"
 ```
 
 Expected outcome: A playlist of AI-curated tracks that are well-known and closely related to your favorites.
@@ -89,63 +93,28 @@ Expected outcome: A playlist of AI-curated tracks that are well-known and closel
 **With `--shuffle`** — generates deep cuts, underground, and lesser-known tracks:
 
 ```bash
-uv run python -m src.cli.main --gemini --shuffle --playlist-name "TDE Gemini Underground" --folder "Tidal Discovery Engine"
+uv run python -m src.cli.main recommend --gemini --shuffle --playlist-name "TDE Gemini Underground" --folder "Tidal Discovery Engine"
 ```
 
 Expected outcome: A playlist of lesser-known, underground tracks selected by AI for a more adventurous listening experience.
 
-**Runtime model override** — temporarily use a different Gemini model:
-
-```bash
-export GEMINI_MODEL=gemini-2.0-flash
-uv run python -m src.cli.main --gemini --playlist-name "TDE Gemini Override" --folder "Tidal Discovery Engine"
-```
-
-**Model configuration notes:**
-
-- Missing or blank `GEMINI_MODEL` logs one warning per run and uses the built-in default model.
-- Fallback is attempted only when the primary model is unavailable or not found **and** `GEMINI_FALLBACK_MODEL` is configured.
-- Auth, quota, and permission failures do **not** trigger fallback.
-- If Gemini returns an unusable structured response (including valid-but-empty parsed output), the CLI performs exactly one recovery retry and then fails closed if still unusable.
-
-### Mode 3: Single Seed Track
+#### Single Seed Track
 
 Generates a playlist based on one specific song. Both `--artist` and `--track` must be provided together.
 
 **Last.fm path:**
 
 ```bash
-uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --num-similar-tracks 1000 --playlist-name "Gamemaster Vibes" --folder "Tidal Discovery Engine"
+uv run python -m src.cli.main recommend --artist "Lost Tribe" --track "Gamemaster" --num-similar-tracks 1000 --playlist-name "Gamemaster Vibes" --folder "Tidal Discovery Engine"
 ```
-
-Expected outcome: A playlist of up to 1000 tracks similar to "Gamemaster" by Lost Tribe, sourced via Last.fm.
 
 **Gemini path:**
 
 ```bash
-uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --gemini --num-similar-tracks 20 --playlist-name "Gamemaster Gemini" --folder "Tidal Discovery Engine"
+uv run python -m src.cli.main recommend --artist "Lost Tribe" --track "Gamemaster" --gemini --num-similar-tracks 20 --playlist-name "Gamemaster Gemini" --folder "Tidal Discovery Engine"
 ```
 
-Expected outcome: A playlist of 20 AI-recommended tracks based on "Gamemaster" by Lost Tribe.
-
-**Gemini deep cuts path:**
-
-```bash
-uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --gemini --shuffle --num-similar-tracks 20 --playlist-name "Gamemaster Gemini Deep Cuts" --folder "Tidal Discovery Engine"
-```
-
-Expected outcome: A playlist of 20 underground, lesser-known tracks inspired by "Gamemaster" by Lost Tribe.
-
-**Mode 3 notes:**
-
-- `--artist` and `--track` must be provided together. Providing only one produces an error.
-- `--num-similar-tracks` must be a positive integer.
-- If the Gemini model is unavailable or not found in Mode 3, the CLI falls back to Last.fm for the same seed.
-- Auth, quota, and permission Gemini failures do **not** trigger fallback and return actionable errors.
-- Tidal tracks that cannot be resolved are skipped with a warning showing the skipped count and a preview of up to 5 names.
-- If zero tracks can be inserted after resolution, the run fails.
-
-### Mode 4: Genre Playlists
+### `genre-playlist`
 
 Reads your entire Tidal library, uses Gemini to classify each track by genre, and creates or syncs one playlist per genre inside a dedicated folder. This mode helps you organize your entire library automatically.
 
@@ -163,34 +132,35 @@ uv run python -m src.cli.main genre-playlist --folder "My Music Styles" --min-ge
 
 Expected outcome: A folder is created (or reused), containing playlists for each genre identified in your library that meets the minimum track threshold. Tracks with highly niche genres (falling below the threshold) are consolidated into an "Others" playlist. Tracks with ambiguous or unidentifiable genres are placed into an "Unknown" playlist.
 
-**Mode 4 notes:**
+**`genre-playlist` notes:**
 - Re-running the command syncs the existing playlists by adding new tracks and removing tracks that are no longer in your library, without creating duplicates.
 - **Local Caching:** Classification results are cached locally in `.tde_genre_cache.json`. This significantly speeds up subsequent runs by only asking Gemini to classify new tracks or tracks that were previously "Unknown".
 - The command groups genres with fewer tracks than `--min-genre-size` into an "Others" playlist to limit playlist sprawl. The default threshold is 5 (so genres with 4 or fewer tracks go to "Others").
 - Playlists are processed and synced in ascending track count order. This forces Tidal to list the largest playlists first when you sort the folder by "Updated date" descending in the Tidal client.
 - This command uses `GEMINI_API_KEY` and requires a stable connection capable of retrieving large libraries.
 
-## All Parameters
+## Parameters
+
+### `recommend` Parameters
 
 | Option | Description | Default | Required |
 | --- | --- | --- | --- |
-| `--num-tidal-tracks` | Number of random favorite tracks to select as seeds. Used in Mode 1 and Mode 2. | `10` | No |
-| `--num-similar-tracks` | Number of similar tracks to retrieve per seed. Used in all modes. | `5` | No |
-| `--gemini` | Use Gemini AI for recommendations instead of Last.fm. Activates Mode 2, or Mode 3 when combined with `--artist`/`--track`. Requires `GEMINI_API_KEY`. | `False` | No |
-| `--shuffle` | Changes recommendation behavior. Last.fm: fetches a large pool and randomly selects. Gemini: requests deep cuts and underground tracks. Used in all modes. | `False` | No |
-| `--artist` | Artist name for single-seed mode (Mode 3). **Must be used with `--track`**. | — | No |
-| `--track` | Track title for single-seed mode (Mode 3). **Must be used with `--artist`**. | — | No |
-| `--exclude-favorites` | Exclude tracks already present in your Tidal favorites from the final playlist output. | `False` | No |
-| `--playlist-name` | Name for the new Tidal playlist. Use `{date}` to insert the current date (YYYYMMDD format). | — | **Yes** (Modes 1-3) |
-| `--folder` | Tidal folder to place the playlist in. Created automatically if it does not exist. Default is "Genres" for Mode 4. | `Genres` | No |
-| `--min-genre-size` | Minimum number of tracks required for a genre playlist in Mode 4. Genres with fewer tracks are grouped into 'Others'. | `5` | No |
+| `--playlist-name` | Name for the new Tidal playlist. Use `{date}` for dynamic date. | — | **Yes** |
+| `--gemini` | Use Gemini AI for recommendations instead of Last.fm. | `False` | No |
+| `--num-tidal-tracks` | Number of random favorite tracks to select as seeds. | `10` | No |
+| `--num-similar-tracks` | Number of similar tracks to retrieve per seed. | `5` | No |
+| `--shuffle` | Changes recommendation behavior (deep cuts/variety). | `False` | No |
+| `--artist` | Artist name for single-seed mode. | — | No |
+| `--track` | Track title for single-seed mode. | — | No |
+| `--exclude-favorites` | Exclude tracks already present in your Tidal favorites. | `False` | No |
+| `--folder` | Tidal folder to place the playlist in. | — | No |
 
-**Constraints:**
+### `genre-playlist` Parameters
 
-- `--artist` and `--track` must be provided together. Providing only one produces an error.
-- `--num-similar-tracks` must be a positive integer.
-- `--gemini` requires the `GEMINI_API_KEY` environment variable to be set.
-- `--exclude-favorites` is fail-closed: if the full favorites list cannot be fetched, the run aborts with guidance instead of producing potentially incorrect output.
+| Option | Description | Default | Required |
+| --- | --- | --- | --- |
+| `--folder` | Tidal folder name for the genre playlists. | `Genres` | No |
+| `--min-genre-size` | Min tracks for a genre playlist; else grouped into 'Others'. | `5` | No |
 
 ## Troubleshooting
 
@@ -205,18 +175,18 @@ Expected outcome: A folder is created (or reused), containing playlists for each
 1. Check the value of `GEMINI_MODEL` in your `.env` file or exported environment variable. Verify the model name is valid and currently available.
 2. If you have `GEMINI_FALLBACK_MODEL` configured, the CLI will automatically attempt to use it. Verify that the fallback model name is also valid.
 3. If neither model works, remove the `--gemini` flag to use Last.fm recommendations instead.
-4. In Mode 3, the CLI automatically falls back to Last.fm when the Gemini model is unavailable — no manual action is needed.
+4. In `recommend` mode with a single seed, the CLI automatically falls back to Last.fm when Gemini is unavailable.
 
-### Mode 3 Missing Required Options
+### `recommend` Missing Required Options
 
 **Symptoms:** The CLI exits with an error: `"Both --artist and --track are required together for single-seed mode."`
 
-**Explanation:** Mode 3 requires both `--artist` and `--track` to identify the seed song. Providing only one of them is invalid.
+**Explanation:** Single-seed mode requires both `--artist` and `--track` to identify the song.
 
 **Corrective action:** Provide both options together:
 
 ```bash
-uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --num-similar-tracks 20 --playlist-name "Seed Playlist"
+uv run python -m src.cli.main recommend --artist "Lost Tribe" --track "Gamemaster" --num-similar-tracks 20 --playlist-name "Seed Playlist"
 ```
 
 ### Authentication or Quota Failure
@@ -232,7 +202,7 @@ uv run python -m src.cli.main --artist "Lost Tribe" --track "Gamemaster" --num-s
 
     ```bash
     rm tidal_session.json
-    uv run python -m src.cli.main --playlist-name "Re-auth"
+    uv run python -m src.cli.main recommend --playlist-name "Re-auth"
     ```
 
 3. Retry the original command after resolving the credential or quota issue.
@@ -280,7 +250,7 @@ You can schedule the script to run periodically using `cron` on Unix-like system
 2. Add a schedule line. Replace `/path/to/tidal-discovery-engine` with the absolute path to your project folder (run `pwd` from your project directory to get it):
 
     ```bash
-    0 8 * * * cd /path/to/tidal-discovery-engine && /home/username/.local/bin/uv run python -m src.cli.main --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}"
+    0 8 * * * cd /path/to/tidal-discovery-engine && /home/username/.local/bin/uv run python -m src.cli.main recommend --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}"
     ```
 
     This example runs the script every day at 8:00 AM.
@@ -294,7 +264,7 @@ You can schedule the script to run periodically using `cron` on Unix-like system
 3. Set a trigger for when you want the task to run.
 4. Set the action to "Start a program".
 5. Set the program/script to your Python executable inside the `.venv` folder (e.g., `C:\path\to\tidal-discovery-engine\.venv\Scripts\python.exe`).
-6. Set the arguments to `-m src.cli.main --playlist-name "Daily Discovery"`.
+6. Set the arguments to `recommend --playlist-name "Daily Discovery"`.
 7. Set the "Start in" directory to the root of the project (e.g., `C:\path\to\tidal-discovery-engine`).
 
 ---
