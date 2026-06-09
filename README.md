@@ -10,7 +10,7 @@ A command-line tool that generates Tidal playlists with recommended tracks using
     git clone https://github.com/Certezalito/tidal-discovery-engine.git && cd tidal-discovery-engine
     ```
 
-2. Create a virtual environment and install dependencies:
+2. Create a virtual environment (Python 3.12+) and install dependencies:
 
     ```bash
     uv venv && uv pip install -e .
@@ -27,7 +27,7 @@ A command-line tool that generates Tidal playlists with recommended tracks using
 
     - Get a Last.fm API key from the [Last.fm API account page](https://www.last.fm/api/account/create).
     - Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey). Required only if you use `--gemini`.
-    - `GEMINI_MODEL` is optional. Resolution order: exported environment variable → `.env` value → built-in default.
+    - `GEMINI_MODEL` is optional. Resolution order: exported environment variable → `.env` value → built-in default (`gemini-2.0-flash`).
     - `GEMINI_FALLBACK_MODEL` is optional. Used only when the primary model is unavailable or not found.
 
 4. Run the script once interactively to authenticate with Tidal:
