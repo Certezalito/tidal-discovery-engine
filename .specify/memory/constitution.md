@@ -1,8 +1,8 @@
 <!--
 Sync Impact Report:
-- **Version Change**: 1.5.0 → 1.6.0
-- **Modified Principles**: None
-- **Added Sections**: Core Principle VII. Local Caching & Performance Efficiency; Quality Gates updates for Caching & Persistence and Batch & Synchronization Idempotency.
+- **Version Change**: 1.6.0 → 1.7.0
+- **Modified Principles**: Principle I (User-Centricity & Understandability) expanded to explicitly mandate documenting all parameter/default changes in README.md.
+- **Added Sections**: Quality Gate documentation rule explicitly requiring README updates for parameter or default value changes.
 - **Removed Sections**: None
 - **Templates requiring updates**: `.specify/templates/plan-template.md`, `.specify/templates/spec-template.md`, `.specify/templates/tasks-template.md` (✅ aligned/no structural changes needed)
 - **Follow-up TODOs**: None
@@ -15,13 +15,15 @@ Sync Impact Report:
 The project MUST prioritize a simple and intuitive command-line interface (CLI) and
 supporting documentation that is easy to understand for end-users. Configuration
 MUST remain minimal, usage MUST be straightforward, and every feature change MUST
-include clear usage examples and behavior notes in end-user documentation. Unknown
-facts MUST NOT be guessed. They MUST be marked explicitly and resolved from the
-best available authoritative source, preferring repository documentation first and
+include clear usage examples and behavior notes in end-user documentation. Any changes to
+CLI options, arguments, or system default parameter values MUST be documented in the
+README. Unknown facts MUST NOT be guessed. They MUST be marked explicitly and resolved
+from the best available authoritative source, preferring repository documentation first and
 then official vendor or API documentation when the repo does not contain the answer.
 
 Rationale: Users can only benefit from automation when behavior is discoverable and
-explainable without source-code inspection.
+explainable without source-code inspection. Undocumented default changes create confusion
+and break user expectations across updates.
 
 ### II. Automation
 The core value lies in automating the process of finding new music and creating
@@ -95,7 +97,8 @@ the creation of new playlists to enrich the user's listening experience.
   changes may satisfy this gate with linting or direct content validation.
 - **Documentation**: Every feature MUST include end-user documentation updates in
   README and/or feature quickstart content when behaviors, flags, constraints,
-  or failure modes are added or changed.
+  or failure modes are added or changed. Any modification or addition to CLI parameters,
+  options, flags, or default values MUST be reflected in README.md.
 - **Understandability**: Documentation MUST explain what changed, how to use it,
   expected outcomes, and failure handling in clear language with at least one
   concrete command example.
@@ -127,4 +130,4 @@ Compliance Review Expectations:
   required targeted validation, fail understandability checks, or invent unknown
   facts without authoritative verification.
 
-**Version**: 1.6.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-07-23
+**Version**: 1.7.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-07-23
