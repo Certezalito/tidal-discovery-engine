@@ -1,11 +1,10 @@
 <!--
 Sync Impact Report:
-- **Version Change**: 1.4.0 → 1.5.0
-- **Modified Principles**:
-  - VI. AI Cost & Token Efficiency: Added principle to restrict AI output to the bare minimum to reduce token output and cost.
-- **Added Sections**: VI. AI Cost & Token Efficiency
+- **Version Change**: 1.5.0 → 1.6.0
+- **Modified Principles**: None
+- **Added Sections**: Core Principle VII. Local Caching & Performance Efficiency; Quality Gates updates for Caching & Persistence and Batch & Synchronization Idempotency.
 - **Removed Sections**: None
-- **Templates requiring updates**: None
+- **Templates requiring updates**: `.specify/templates/plan-template.md`, `.specify/templates/spec-template.md`, `.specify/templates/tasks-template.md` (✅ aligned/no structural changes needed)
 - **Follow-up TODOs**: None
 -->
 # Tidal Discovery Engine Constitution
@@ -53,6 +52,17 @@ cost.
 Rationale: Extraneous output from AI models increases costs and latency without adding
 value to the automated playlist generation workflow.
 
+### VII. Local Caching & Performance Efficiency
+External metadata, AI track classifications (such as genres), and heavy API search results
+MUST be cached locally in structured persistent storage (e.g., SQLite or database) to
+minimize redundant API requests, reduce execution latency, and eliminate unnecessary AI costs
+across repeated runs. Caches MUST support re-checking or invalidating unknown/unclassified items
+to ensure progressive quality improvements while maintaining cache integrity across incremental
+runs.
+
+Rationale: Re-querying AI or music APIs for static track metadata or previously classified library
+items consumes unnecessary API quota, increases execution time, and slows down library-wide automation.
+
 ## Mission
 To create a personalized music discovery tool that seamlessly integrates with a
 user's Tidal library, leverages Last.fm's recommendation engine, and automates
@@ -72,6 +82,14 @@ the creation of new playlists to enrich the user's listening experience.
 - Code MUST adhere to modular design principles to support the Extensibility
   principle.
 - All dependencies MUST be managed via `uv`.
+- **Caching & Persistence**: Commands and services operating on library-wide metadata,
+  track genres, or external AI/API queries MUST implement structured persistent local
+  caching (e.g., SQLite/database) with explicit mechanisms to re-evaluate missing or
+  "Unknown" classifications.
+- **Batch & Synchronization Idempotency**: Workflows performing full library scans or
+  playlist updates (e.g., genre playlist sorting) MUST handle pagination, batching,
+  and API rate limits gracefully, ensuring operations are idempotent and re-runnable
+  without duplicating playlists or tracks.
 - **Validation**: Behavior changes MUST include targeted automated checks covering
   the affected CLI flow, service behavior, or error handling. Pure documentation-only
   changes may satisfy this gate with linting or direct content validation.
@@ -109,4 +127,4 @@ Compliance Review Expectations:
   required targeted validation, fail understandability checks, or invent unknown
   facts without authoritative verification.
 
-**Version**: 1.5.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-06-07
+**Version**: 1.6.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-07-23
