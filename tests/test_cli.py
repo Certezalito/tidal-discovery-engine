@@ -315,6 +315,15 @@ class TestCLI(unittest.TestCase):
         mock_get_session.return_value = MagicMock()
         mock_summary = MagicMock()
         mock_summary.library_tracks_scanned = 0
+        mock_summary.cache_hits = 0
+        mock_summary.cache_misses = 0
+        mock_summary.classified_tracks = 0
+        mock_summary.unknown_tracks = 0
+        mock_summary.playlists_created = 0
+        mock_summary.playlists_updated = 0
+        mock_summary.playlists_deleted = 0
+        mock_summary.tracks_added = 0
+        mock_summary.tracks_removed = 0
         mock_run_sync.return_value = mock_summary
 
         # CLI argument provided
@@ -325,7 +334,7 @@ class TestCLI(unittest.TestCase):
         )
         
         self.assertEqual(result.exit_code, 0)
-        mock_run_sync.assert_called_with(mock_get_session.return_value, 'My Custom Genres', min_genre_size=5)
+        mock_run_sync.assert_called_with(mock_get_session.return_value, 'My Custom Genres', min_genre_size=5, db_path='data/genre_cache.db')
         
         # CLI argument absent (defaults to "Genres")
         result2 = self.runner.invoke(
@@ -335,7 +344,7 @@ class TestCLI(unittest.TestCase):
         )
         
         self.assertEqual(result2.exit_code, 0)
-        mock_run_sync.assert_called_with(mock_get_session.return_value, 'Genres', min_genre_size=5)
+        mock_run_sync.assert_called_with(mock_get_session.return_value, 'Genres', min_genre_size=5, db_path='data/genre_cache.db')
 
     @patch('src.cli.main.setup_logging')
     @patch('src.cli.main.run_genre_playlist_sync')
@@ -347,8 +356,11 @@ class TestCLI(unittest.TestCase):
         mock_get_session.return_value = MagicMock()
         mock_summary = MagicMock()
         mock_summary.library_tracks_scanned = 10
+        mock_summary.cache_hits = 10
+        mock_summary.cache_misses = 0
         mock_summary.playlists_created = 0
         mock_summary.playlists_updated = 1
+        mock_summary.playlists_deleted = 0
         mock_summary.tracks_added = 2
         mock_summary.tracks_removed = 1
         mock_summary.unknown_tracks = 0

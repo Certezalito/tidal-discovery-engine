@@ -16,8 +16,8 @@
 
 **Purpose**: Database directory setup and SQLite connection framework
 
-- [ ] T001 Create SQLite database helper module and connection management in `src/lib/db.py`
-- [ ] T002 [P] Configure default database file path `data/genre_cache.db` in `.env` / configuration
+- [X] T001 Create SQLite database helper module and connection management in `src/lib/db.py`
+- [X] T002 [P] Configure default database file path `data/genre_cache.db` in `.env` / configuration
 
 ---
 
@@ -25,9 +25,9 @@
 
 **Purpose**: SQLite schema creation and core `GenreCacheService` implementation
 
-- [ ] T003 Implement `track_genre_cache` table creation schema and migrations in `src/lib/db.py`
-- [ ] T004 Implement `GenreCacheService` class for SQLite cache operations in `src/services/genre_cache_service.py`
-- [ ] T005 [P] Create unit tests for SQLite database setup and `GenreCacheService` in `tests/test_genre_cache_service.py`
+- [X] T003 Implement `track_genre_cache` table creation schema and migrations in `src/lib/db.py`
+- [X] T004 Implement `GenreCacheService` class for SQLite cache operations in `src/services/genre_cache_service.py`
+- [X] T005 [P] Create unit tests for SQLite database setup and `GenreCacheService` in `tests/test_genre_cache_service.py`
 
 **Checkpoint**: Core SQLite cache foundation ready — user story implementation can begin
 
@@ -37,11 +37,11 @@
 
 **Goal**: Check SQLite cache before calling Gemini, query Gemini only for uncached/unknown tracks, and persist results.
 
-- [ ] T006 [US1] Implement batch track lookup (`get_cached_genres`) in `src/services/genre_cache_service.py`
-- [ ] T007 [US1] Implement batch cache insertion/upsert (`save_track_genres`) in `src/services/genre_cache_service.py`
-- [ ] T008 [US1] Integrate `GenreCacheService` into `src/services/genre_playlist_service.py` to filter uncached tracks before Gemini API calls
-- [ ] T009 [US1] Implement logic in `src/services/genre_playlist_service.py` to re-query Gemini for previously cached "Unknown" tracks
-- [ ] T010 [P] [US1] Add unit tests for cache hits, cache misses, and "Unknown" re-evaluation in `tests/test_genre_cache_service.py`
+- [X] T006 [US1] Implement batch track lookup (`get_cached_genres`) in `src/services/genre_cache_service.py`
+- [X] T007 [US1] Implement batch cache insertion/upsert (`save_track_genres`) in `src/services/genre_cache_service.py`
+- [X] T008 [US1] Integrate `GenreCacheService` into `src/services/genre_playlist_service.py` to filter uncached tracks before Gemini API calls
+- [X] T009 [US1] Implement logic in `src/services/genre_playlist_service.py` to re-query Gemini for previously cached "Unknown" tracks
+- [X] T010 [P] [US1] Add unit tests for cache hits, cache misses, and "Unknown" re-evaluation in `tests/test_genre_cache_service.py`
 
 ---
 
@@ -49,10 +49,10 @@
 
 **Goal**: Support `--min-genre-size` thresholding to group sparse genres into an "Others" playlist.
 
-- [ ] T011 [US2] Update CLI command options in `src/cli/main.py` to accept `--min-genre-size` (default 5) and `--db-path`
-- [ ] T012 [US2] Implement genre grouping and thresholding logic in `src/services/genre_playlist_service.py` to route genres < `min_genre_size` into "Others"
-- [ ] T013 [US2] Ensure strict 1-to-1 best-fit track assignment to single target playlist in `src/services/genre_playlist_service.py`
-- [ ] T014 [P] [US2] Add unit tests for genre thresholding and "Others" bucket allocation in `tests/test_genre_playlist_service.py`
+- [X] T011 [US2] Update CLI command options in `src/cli/main.py` to accept `--min-genre-size` (default 5) and `--db-path`
+- [X] T012 [US2] Implement genre grouping and thresholding logic in `src/services/genre_playlist_service.py` to route genres < `min_genre_size` into "Others"
+- [X] T013 [US2] Ensure strict 1-to-1 best-fit track assignment to single target playlist in `src/services/genre_playlist_service.py`
+- [X] T014 [P] [US2] Add unit tests for genre thresholding and "Others" bucket allocation in `tests/test_genre_playlist_service.py`
 
 ---
 
@@ -60,10 +60,10 @@
 
 **Goal**: Sync Tidal genre playlists, remove empty/obsolete playlists, and update in ascending track count order.
 
-- [ ] T015 [US3] Implement Tidal folder and playlist diffing logic in `src/services/genre_playlist_service.py` to add new tracks and remove deleted tracks
-- [ ] T016 [US3] Implement clean playlist deletion/emptying logic in `src/services/genre_playlist_service.py` when a genre track count drops to 0
-- [ ] T017 [US3] Implement ascending track count sort order for playlist updates in `src/services/genre_playlist_service.py`
-- [ ] T018 [P] [US3] Add unit tests for playlist diffing, obsolete playlist removal, and update ordering in `tests/test_genre_playlist_service.py`
+- [X] T015 [US3] Implement Tidal folder and playlist diffing logic in `src/services/genre_playlist_service.py` to add new tracks and remove deleted tracks
+- [X] T016 [US3] Implement clean playlist deletion/emptying logic in `src/services/genre_playlist_service.py` when a genre track count drops to 0
+- [X] T017 [US3] Implement ascending track count sort order for playlist updates in `src/services/genre_playlist_service.py`
+- [X] T018 [P] [US3] Add unit tests for playlist diffing, obsolete playlist removal, and update ordering in `tests/test_genre_playlist_service.py`
 
 ---
 
@@ -71,9 +71,9 @@
 
 **Purpose**: CLI feedback, performance reporting, and end-to-end validation
 
-- [ ] T019 Implement CLI progress output and token cost savings summary report in `src/cli/main.py`
-- [ ] T020 [P] Add CLI integration tests in `tests/test_cli.py` covering `--min-genre-size` and `--db-path` flags
-- [ ] T021 Update end-user documentation and CLI usage examples in `README.md` and `specs/014-cache-genre-playlists/quickstart.md`
+- [X] T019 Implement CLI progress output and token cost savings summary report in `src/cli/main.py`
+- [X] T020 [P] Add CLI integration tests in `tests/test_cli.py` covering `--min-genre-size` and `--db-path` flags
+- [X] T021 Update end-user documentation and CLI usage examples in `README.md` and `specs/014-cache-genre-playlists/quickstart.md`
 
 ---
 

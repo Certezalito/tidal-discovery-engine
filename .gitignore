@@ -11,6 +11,8 @@ dist/
 .env*
 tidal_session.json
 .tde_genre_cache.json
+*.db
+data/
 
 # Logs
 *.log

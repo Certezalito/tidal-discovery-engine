@@ -348,9 +348,10 @@ def recommend(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_na
 @cli.command("genre-playlist")
 @click.option("--folder", default="Genres", help="Destination folder name for the genre playlists. Overrides configuration.")
 @click.option("--min-genre-size", default=5, type=int, help="Minimum number of tracks required for a genre playlist. Genres with fewer tracks are grouped into an 'Others' playlist.")
-def genre_playlist_cmd(folder, min_genre_size):
+@click.option("--db-path", default="data/genre_cache.db", type=click.Path(), help="Path to the SQLite database cache file.")
+def genre_playlist_cmd(folder, min_genre_size, db_path):
     """
-    Reads the full Tidal library, categorizes tracks by genre via Gemini,
+    Reads the full Tidal library, categorizes tracks by genre via Gemini using a local database cache,
     and syncs genre playlists into the specified folder.
     """
     setup_logging()
@@ -359,20 +360,40 @@ def genre_playlist_cmd(folder, min_genre_size):
     try:
         tidal_session = tidal_service.get_session()
         
-        # Verify Gemini is configured (this relies on API key inside)
+        # Verify Gemini is configured
         if "GEMINI_API_KEY" not in os.environ:
             raise click.ClickException("genre-playlist requires GEMINI_API_KEY environment variable.")
             
-        summary = run_genre_playlist_sync(tidal_session, folder, min_genre_size=min_genre_size)
+        summary = run_genre_playlist_sync(
+            tidal_session,
+            folder,
+            min_genre_size=min_genre_size,
+            db_path=db_path,
+        )
         
         logging.info("Genre playlist sync complete.")
         logging.info(f"Tracks scanned: {summary.library_tracks_scanned}")
+        logging.info(f"Cache hits: {summary.cache_hits}")
+        logging.info(f"Cache misses: {summary.cache_misses}")
         logging.info(f"Classified tracks: {summary.classified_tracks}")
         logging.info(f"Unknown tracks: {summary.unknown_tracks}")
         logging.info(f"Playlists created: {summary.playlists_created}")
         logging.info(f"Playlists updated: {summary.playlists_updated}")
+        logging.info(f"Playlists deleted: {summary.playlists_deleted}")
         logging.info(f"Tracks added: {summary.tracks_added}")
         logging.info(f"Tracks removed: {summary.tracks_removed}")
+
+        click.echo("\n--- Genre Playlist Sync Summary ---")
+        click.echo(f"Library Tracks Scanned: {summary.library_tracks_scanned}")
+        click.echo(f"Database Cache Hits:    {summary.cache_hits}")
+        click.echo(f"Gemini API Queries:     {summary.cache_misses}")
+        click.echo(f"Playlists Created:      {summary.playlists_created}")
+        click.echo(f"Playlists Updated:      {summary.playlists_updated}")
+        click.echo(f"Playlists Deleted:      {summary.playlists_deleted}")
+        if summary.cache_hits + summary.cache_misses > 0:
+            savings_pct = (summary.cache_hits / (summary.cache_hits + summary.cache_misses)) * 100
+            click.echo(f"Token Cost Reduction:   {savings_pct:.1f}%")
+        click.echo("------------------------------------")
 
     except Exception as e:
         logging.error(f"Failed to run genre-playlist: {e}")

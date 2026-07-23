@@ -350,6 +350,17 @@ def sync_playlist_tracks(session, playlist_id, to_add_ids, to_remove_ids):
         logging.error(f"Failed to sync playlist {playlist_id}: {e}")
         raise
 
+
+def delete_playlist(session, playlist_id):
+    """
+    Deletes or removes a playlist from Tidal.
+    """
+    try:
+        playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
+        playlist.delete()
+    except Exception as e:
+        logging.error(f"Failed to delete playlist {playlist_id}: {e}")
+
 def create_playlist_in_folder(session, name, description, folder_id, track_ids):
     """
     Creates a playlist in a specific folder.
