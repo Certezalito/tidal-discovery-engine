@@ -124,19 +124,20 @@ Reads your entire Tidal library, uses Gemini to classify each track by genre, an
 uv run python -m src.cli.main genre-playlist
 ```
 
-**Custom Folder & Threshold** — organize into a specific folder and group genres with fewer than 10 tracks into an "Others" playlist:
+**Custom Folder, Threshold & Database Path** — organize into a specific folder, group genres with fewer than 10 tracks into an "Others" playlist, and specify a custom SQLite database cache file:
 
 ```bash
-uv run python -m src.cli.main genre-playlist --folder "My Music Styles" --min-genre-size 10
+uv run python -m src.cli.main genre-playlist --folder "My Music Styles" --min-genre-size 10 --db-path "data/genre_cache.db"
 ```
 
 Expected outcome: A folder is created (or reused), containing playlists for each genre identified in your library that meets the minimum track threshold. Tracks with highly niche genres (falling below the threshold) are consolidated into an "Others" playlist. Tracks with ambiguous or unidentifiable genres are placed into an "Unknown" playlist.
 
 **`genre-playlist` notes:**
 - Re-running the command syncs the existing playlists by adding new tracks and removing tracks that are no longer in your library, without creating duplicates.
-- **Local Caching:** Classification results are cached locally in `.tde_genre_cache.json`. This significantly speeds up subsequent runs by only asking Gemini to classify new tracks or tracks that were previously "Unknown".
+- **SQLite Caching:** Track genre classification results are cached locally in an SQLite database (default: `data/genre_cache.db`). On subsequent runs, cached classifications are reused with zero Gemini token cost, and token cost reduction percentages are reported in the CLI output.
 - The command groups genres with fewer tracks than `--min-genre-size` into an "Others" playlist to limit playlist sprawl. The default threshold is 5 (so genres with 4 or fewer tracks go to "Others").
 - Playlists are processed and synced in ascending track count order. This forces Tidal to list the largest playlists first when you sort the folder by "Updated date" descending in the Tidal client.
+- Obsolete genre playlists (whose tracks have been removed from your library or moved to another playlist) are automatically deleted from Tidal.
 - This command uses `GEMINI_API_KEY` and requires a stable connection capable of retrieving large libraries.
 
 ## Parameters
@@ -161,6 +162,7 @@ Expected outcome: A folder is created (or reused), containing playlists for each
 | --- | --- | --- | --- |
 | `--folder` | Tidal folder name for the genre playlists. | `Genres` | No |
 | `--min-genre-size` | Min tracks for a genre playlist; else grouped into 'Others'. | `5` | No |
+| `--db-path` | Path to the SQLite database cache file. | `data/genre_cache.db` | No |
 
 ## Troubleshooting
 
