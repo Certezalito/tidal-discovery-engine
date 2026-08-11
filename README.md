@@ -118,7 +118,7 @@ uv run python -m src.cli.main recommend --artist "Lost Tribe" --track "Gamemaste
 
 Reads your entire Tidal library, uses Gemini to classify each track by genre, and creates or syncs one playlist per genre inside a dedicated folder. This mode helps you organize your entire library automatically.
 
-**First Run & Syncing** — organize your library into a folder named "Genres" (the default folder name) with the default minimum genre size (5 tracks):
+**First Run & Syncing** — organize your library into a folder named "Genres" (the default folder name) with the default minimum genre size (10 tracks):
 
 ```bash
 uv run python -m src.cli.main genre-playlist
@@ -135,7 +135,7 @@ Expected outcome: A folder is created (or reused), containing playlists for each
 **`genre-playlist` notes:**
 - Re-running the command syncs the existing playlists by adding new tracks and removing tracks that are no longer in your library, without creating duplicates.
 - **SQLite Caching:** Track genre classification results are cached locally in an SQLite database (default: `data/genre_cache.db`). On subsequent runs, cached classifications are reused with zero Gemini token cost, and token cost reduction percentages are reported in the CLI output.
-- The command groups genres with fewer tracks than `--min-genre-size` into an "Others" playlist to limit playlist sprawl. The default threshold is 5 (so genres with 4 or fewer tracks go to "Others").
+- The command groups genres with fewer tracks than `--min-genre-size` into an "Others" playlist to limit playlist sprawl. The default threshold is 10 (so genres with 9 or fewer tracks go to "Others").
 - Playlists are processed and synced in ascending track count order. This forces Tidal to list the largest playlists first when you sort the folder by "Updated date" descending in the Tidal client.
 - Obsolete genre playlists (whose tracks have been removed from your library or moved to another playlist) are automatically deleted from Tidal.
 - This command uses `GEMINI_API_KEY` and requires a stable connection capable of retrieving large libraries.
@@ -161,7 +161,7 @@ Expected outcome: A folder is created (or reused), containing playlists for each
 | Option | Description | Default | Required |
 | --- | --- | --- | --- |
 | `--folder` | Tidal folder name for the genre playlists. | `Genres` | No |
-| `--min-genre-size` | Min tracks for a genre playlist; else grouped into 'Others'. | `5` | No |
+| `--min-genre-size` | Min tracks for a genre playlist; else grouped into 'Others'. | `10` | No |
 | `--db-path` | Path to the SQLite database cache file. | `data/genre_cache.db` | No |
 
 ## Troubleshooting

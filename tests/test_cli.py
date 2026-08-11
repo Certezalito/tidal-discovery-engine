@@ -334,7 +334,7 @@ class TestCLI(unittest.TestCase):
         )
         
         self.assertEqual(result.exit_code, 0)
-        mock_run_sync.assert_called_with(mock_get_session.return_value, 'My Custom Genres', min_genre_size=5, db_path='data/genre_cache.db')
+        mock_run_sync.assert_called_with(mock_get_session.return_value, 'My Custom Genres', min_genre_size=10, db_path='data/genre_cache.db')
         
         # CLI argument absent (defaults to "Genres")
         result2 = self.runner.invoke(
@@ -344,7 +344,7 @@ class TestCLI(unittest.TestCase):
         )
         
         self.assertEqual(result2.exit_code, 0)
-        mock_run_sync.assert_called_with(mock_get_session.return_value, 'Genres', min_genre_size=5, db_path='data/genre_cache.db')
+        mock_run_sync.assert_called_with(mock_get_session.return_value, 'Genres', min_genre_size=10, db_path='data/genre_cache.db')
 
     @patch('src.cli.main.setup_logging')
     @patch('src.cli.main.run_genre_playlist_sync')
@@ -413,7 +413,7 @@ if __name__ == '__main__':
         mock_summary.library_tracks_scanned = 0
         mock_run_sync.return_value = mock_summary
 
-        # Default is 2
+        # Default is 10
         result = self.runner.invoke(
             cli,
             ['genre-playlist'],
@@ -421,15 +421,15 @@ if __name__ == '__main__':
         )
         self.assertEqual(result.exit_code, 0)
         args, kwargs = mock_run_sync.call_args
-        self.assertEqual(kwargs.get('min_genre_size', 5), 5)
+        self.assertEqual(kwargs.get('min_genre_size', 10), 10)
         
-        # Override to 5
+        # Override to 15
         result2 = self.runner.invoke(
             cli,
-            ['genre-playlist', '--min-genre-size', '10'],
+            ['genre-playlist', '--min-genre-size', '15'],
             env={'GEMINI_API_KEY': 'test-key'}
         )
         self.assertEqual(result2.exit_code, 0)
         args2, kwargs2 = mock_run_sync.call_args
-        self.assertEqual(kwargs2['min_genre_size'], 10)
+        self.assertEqual(kwargs2['min_genre_size'], 15)
 

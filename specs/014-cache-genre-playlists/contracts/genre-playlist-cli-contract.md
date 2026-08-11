@@ -11,7 +11,7 @@ uv run python -m src.cli.main genre-playlist [OPTIONS]
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `--folder` | TEXT | `"Genre Playlists"` | Tidal playlist folder name where genre playlists will be created/synced. |
-| `--min-genre-size` | INT | `5` | Minimum number of tracks required for a genre to receive its own playlist. Genres below this threshold are grouped into "Others". |
+| `--min-genre-size` | INT | `10` | Minimum number of tracks required for a genre to receive its own playlist. Genres below this threshold are grouped into "Others". |
 | `--db-path` | PATH | `"data/genre_cache.db"` | Path to the local SQLite database cache. |
 | `--force-reclassify` | FLAG | `False` | Optional flag to bypass cache and re-query Gemini for all tracks. |
 

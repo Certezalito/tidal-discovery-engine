@@ -347,7 +347,7 @@ def recommend(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_na
 
 @cli.command("genre-playlist")
 @click.option("--folder", default="Genres", help="Destination folder name for the genre playlists. Overrides configuration.")
-@click.option("--min-genre-size", default=5, type=int, help="Minimum number of tracks required for a genre playlist. Genres with fewer tracks are grouped into an 'Others' playlist.")
+@click.option("--min-genre-size", default=10, type=int, help="Minimum number of tracks required for a genre playlist. Genres with fewer tracks are grouped into an 'Others' playlist.")
 @click.option("--db-path", default="data/genre_cache.db", type=click.Path(), help="Path to the SQLite database cache file.")
 def genre_playlist_cmd(folder, min_genre_size, db_path):
     """

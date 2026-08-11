@@ -45,7 +45,7 @@ def run_genre_playlist_sync(
     session,
     folder_name: str,
     api_key: Optional[str] = None,
-    min_genre_size: int = 5,
+    min_genre_size: int = 10,
     db_path: Optional[str] = None,
 ) -> GenreRunSummary:
     """
