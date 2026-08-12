@@ -10,6 +10,7 @@ class GenreRunSummary(BaseModel):
     playlists_created: int = 0
     playlists_updated: int = 0
     playlists_deleted: int = 0
+    duplicate_playlists_deleted: int = 0
     tracks_added: int = 0
     tracks_removed: int = 0
 
@@ -95,9 +96,27 @@ def run_genre_playlist_sync(
     summary.cache_hits = len(cached_genres)
     summary.cache_misses = len(uncached_or_unknown_keys)
     
-    genre_groups = {}
+    import re
+    genre_groups_norm = {}
+    norm_to_canonical = {}
     unknown_track_ids = []
     
+    def add_to_genre_groups(raw_genre, track_id):
+        raw_genre = raw_genre.strip()
+        norm_key = re.sub(r'[^a-z0-9]', '', raw_genre.lower())
+        if norm_key not in genre_groups_norm:
+            genre_groups_norm[norm_key] = []
+        genre_groups_norm[norm_key].append(track_id)
+        
+        if norm_key not in norm_to_canonical:
+            norm_to_canonical[norm_key] = raw_genre
+        else:
+            existing = norm_to_canonical[norm_key]
+            if "-" in existing and " " in raw_genre:
+                norm_to_canonical[norm_key] = raw_genre
+            elif raw_genre.istitle() and not existing.istitle() and raw_genre.upper() != raw_genre:
+                norm_to_canonical[norm_key] = raw_genre
+
     # Process cached classified tracks
     uncached_keys_set = set(uncached_or_unknown_keys)
     uncached_tracks = []
@@ -106,10 +125,7 @@ def run_genre_playlist_sync(
         if key in cached_genres:
             genre = cached_genres[key]
             summary.classified_tracks += 1
-            genre_key = genre.strip()
-            if genre_key not in genre_groups:
-                genre_groups[genre_key] = []
-            genre_groups[genre_key].append(t.id)
+            add_to_genre_groups(genre, t.id)
         elif key in uncached_keys_set:
             uncached_tracks.append(t)
             
@@ -146,9 +162,7 @@ def run_genre_playlist_sync(
                 else:
                     summary.classified_tracks += 1
                     genre_key = genre.strip()
-                    if genre_key not in genre_groups:
-                        genre_groups[genre_key] = []
-                    genre_groups[genre_key].append(track.id)
+                    add_to_genre_groups(genre_key, track.id)
                     records_to_save.append({
                         "track_id": key,
                         "artist": artist_name,
@@ -158,6 +172,11 @@ def run_genre_playlist_sync(
                     })
 
         cache_service.save_track_genres(records_to_save)
+
+    genre_groups = {}
+    for norm_key, track_ids in genre_groups_norm.items():
+        canonical_name = norm_to_canonical[norm_key]
+        genre_groups[canonical_name] = track_ids
 
     # Thresholding: route genres < min_genre_size into "Others"
     others_track_ids = []
@@ -178,7 +197,47 @@ def run_genre_playlist_sync(
     folder = get_or_create_folder(session, folder_name)
     
     existing_playlists = get_playlists_in_folder(session, folder.id)
-    playlist_map = {p.name.lower(): p for p in existing_playlists if p.name}
+    
+    grouped_playlists = {}
+    for p in existing_playlists:
+        if not p.name:
+            continue
+        # Strip trailing " (1)", " (2)", etc. that might have been added by previous duplicate creations
+        normalized_name = re.sub(r'\s*\(\d+\)$', '', p.name).strip()
+        key = normalized_name.lower()
+        if key not in grouped_playlists:
+            grouped_playlists[key] = []
+        grouped_playlists[key].append(p)
+        
+    playlist_map = {}
+    for search_name, pls in grouped_playlists.items():
+        if len(pls) > 1:
+            def sort_key(p):
+                val = getattr(p, 'created', None)
+                if val is not None:
+                    import datetime
+                    if isinstance(val, datetime.datetime):
+                        return val.timestamp()
+                    return str(val)
+                return str(getattr(p, 'id', ''))
+                
+            try:
+                pls_sorted = sorted(pls, key=sort_key)
+            except Exception:
+                pls_sorted = pls
+                
+            playlist_to_keep = pls_sorted[0]
+            playlists_to_delete = pls_sorted[1:]
+            
+            playlist_map[search_name] = playlist_to_keep
+            
+            for p_del in playlists_to_delete:
+                logging.info(f"Removing duplicate playlist '{p_del.name}' (id: {p_del.id}) from folder...")
+                delete_playlist(session, p_del.id)
+                summary.playlists_deleted += 1
+                summary.duplicate_playlists_deleted += 1
+        elif len(pls) == 1:
+            playlist_map[search_name] = pls[0]
     
     # Process obsolete/empty playlists whose genre no longer exists in desired groups
     active_desired_names_lower = {g.lower() for g in final_genre_groups.keys()}
@@ -199,16 +258,34 @@ def run_genre_playlist_sync(
         if search_name in playlist_map:
             playlist = playlist_map[search_name]
             existing_tracks = get_playlist_tracks(session, playlist.id)
+            
+            if existing_tracks is None:
+                logging.warning(f"Playlist '{playlist.name}' (id: {playlist.id}) is inaccessible. Recreating...")
+                create_playlist_in_folder(
+                    session, 
+                    name=genre_name, 
+                    description=f"Auto-generated genre playlist for {genre_name}.", 
+                    folder_id=folder.id, 
+                    track_ids=desired_track_ids
+                )
+                summary.playlists_created += 1
+                summary.tracks_added += len(desired_track_ids)
+                logging.info(f"Recreated playlist '{genre_name}' with {len(desired_track_ids)} tracks.")
+                continue
+                
             existing_track_ids = [t.id for t in existing_tracks]
             
             to_add, to_remove = calculate_sync_delta(desired_track_ids, existing_track_ids)
             
             if to_add or to_remove:
-                sync_playlist_tracks(session, playlist.id, to_add_ids=to_add, to_remove_ids=to_remove)
-                summary.playlists_updated += 1
-                summary.tracks_added += len(to_add)
-                summary.tracks_removed += len(to_remove)
-                logging.info(f"Synced playlist '{playlist.name}': +{len(to_add)} -{len(to_remove)} tracks.")
+                success = sync_playlist_tracks(session, playlist.id, to_add_ids=to_add, to_remove_ids=to_remove)
+                if success:
+                    summary.playlists_updated += 1
+                    summary.tracks_added += len(to_add)
+                    summary.tracks_removed += len(to_remove)
+                    logging.info(f"Synced playlist '{playlist.name}': +{len(to_add)} -{len(to_remove)} tracks.")
+                else:
+                    logging.warning(f"Skipping updates to '{playlist.name}' due to sync errors.")
             else:
                 logging.info(f"Playlist '{playlist.name}' is up to date.")
         else:

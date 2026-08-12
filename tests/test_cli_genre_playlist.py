@@ -24,6 +24,7 @@ def test_genre_playlist_cli_options(mock_sync, mock_get_session):
     mock_summary.playlists_created = 3
     mock_summary.playlists_updated = 2
     mock_summary.playlists_deleted = 1
+    mock_summary.duplicate_playlists_deleted = 0
     mock_summary.tracks_added = 20
     mock_summary.tracks_removed = 0
     mock_sync.return_value = mock_summary
