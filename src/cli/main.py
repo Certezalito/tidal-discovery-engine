@@ -378,10 +378,15 @@ def genre_playlist_cmd(folder, min_genre_size, db_path):
         logging.info(f"Classified tracks: {summary.classified_tracks}")
         logging.info(f"Unknown tracks: {summary.unknown_tracks}")
         logging.info(f"Playlists created: {summary.playlists_created}")
-        logging.info(f"Playlists updated: {summary.playlists_updated}")
-        logging.info(f"Playlists deleted: {summary.playlists_deleted}")
-        logging.info(f"Tracks added: {summary.tracks_added}")
-        logging.info(f"Tracks removed: {summary.tracks_removed}")
+        logging.info(f"Playlists Updated:      {summary.playlists_updated}")
+        logging.info(f"Playlists Deleted:      {summary.playlists_deleted}")
+        if summary.duplicate_playlists_deleted > 0:
+            logging.info(f"  (including {summary.duplicate_playlists_deleted} duplicates removed)")
+        if summary.cache_hits + summary.cache_misses > 0:
+            savings_pct = (summary.cache_hits / (summary.cache_hits + summary.cache_misses)) * 100
+            logging.info(f"Token Cost Reduction:   {savings_pct:.1f}%")
+        logging.info(f"Tracks Added:           {summary.tracks_added}")
+        logging.info(f"Tracks Removed:         {summary.tracks_removed}")
 
         click.echo("\n--- Genre Playlist Sync Summary ---")
         click.echo(f"Library Tracks Scanned: {summary.library_tracks_scanned}")
@@ -390,13 +395,17 @@ def genre_playlist_cmd(folder, min_genre_size, db_path):
         click.echo(f"Playlists Created:      {summary.playlists_created}")
         click.echo(f"Playlists Updated:      {summary.playlists_updated}")
         click.echo(f"Playlists Deleted:      {summary.playlists_deleted}")
+        if summary.duplicate_playlists_deleted > 0:
+            click.echo(f"  (including {summary.duplicate_playlists_deleted} duplicates removed)")
         if summary.cache_hits + summary.cache_misses > 0:
             savings_pct = (summary.cache_hits / (summary.cache_hits + summary.cache_misses)) * 100
             click.echo(f"Token Cost Reduction:   {savings_pct:.1f}%")
+        click.echo(f"Tracks Added:           {summary.tracks_added}")
+        click.echo(f"Tracks Removed:         {summary.tracks_removed}")
         click.echo("------------------------------------")
 
     except Exception as e:
-        logging.error(f"Failed to run genre-playlist: {e}")
+        logging.exception(f"Failed to run genre-playlist: {e}")
         raise click.ClickException(str(e))
 
 if __name__ == '__main__':

@@ -135,12 +135,16 @@ class TestCLI(unittest.TestCase):
     @patch('src.services.tidal_service.get_random_favorite_tracks')
     @patch('src.services.tidal_service.build_favorites_snapshot')
     @patch('src.services.gemini_service.get_recommendations')
+    @patch('src.services.tidal_service.get_track_by_isrc')
+    @patch('src.services.tidal_service.search_for_track')
     @patch('src.services.tidal_service.create_playlist')
     @patch('src.cli.main.log_cli_warning')
     def test_gemini_failure_with_exclude_favorites_not_misattributed(
         self,
         mock_log_warning,
         mock_create_playlist,
+        mock_search_for_track,
+        mock_get_track_by_isrc,
         mock_get_recommendations,
         mock_build_snapshot,
         mock_get_random,
@@ -319,10 +323,11 @@ class TestCLI(unittest.TestCase):
         mock_summary.cache_misses = 0
         mock_summary.classified_tracks = 0
         mock_summary.unknown_tracks = 0
-        mock_summary.playlists_created = 0
+        mock_summary.playlists_created = 5
         mock_summary.playlists_updated = 0
         mock_summary.playlists_deleted = 0
-        mock_summary.tracks_added = 0
+        mock_summary.duplicate_playlists_deleted = 0
+        mock_summary.tracks_added = 50
         mock_summary.tracks_removed = 0
         mock_run_sync.return_value = mock_summary
 
@@ -359,10 +364,11 @@ class TestCLI(unittest.TestCase):
         mock_summary.cache_hits = 10
         mock_summary.cache_misses = 0
         mock_summary.playlists_created = 0
-        mock_summary.playlists_updated = 1
+        mock_summary.playlists_updated = 0
         mock_summary.playlists_deleted = 0
-        mock_summary.tracks_added = 2
-        mock_summary.tracks_removed = 1
+        mock_summary.duplicate_playlists_deleted = 0
+        mock_summary.tracks_added = 0
+        mock_summary.tracks_removed = 0
         mock_summary.unknown_tracks = 0
         mock_summary.classified_tracks = 10
         mock_run_sync.return_value = mock_summary

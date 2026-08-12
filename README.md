@@ -116,6 +116,9 @@ uv run python -m src.cli.main recommend --artist "Lost Tribe" --track "Gamemaste
 
 ### `genre-playlist`
 
+> ⚠️ **DESTRUCTIVE OPERATION**: The `genre-playlist` command strictly owns the folder it targets. **Any playlists in the target folder that do not match the expected generated genres (including manually created playlists) will be permanently deleted.** Do not point this command at a folder containing your personal manual playlists.
+
+
 Reads your entire Tidal library, uses Gemini to classify each track by genre, and creates or syncs one playlist per genre inside a dedicated folder. This mode helps you organize your entire library automatically.
 
 **First Run & Syncing** — organize your library into a folder named "Genres" (the default folder name) with the default minimum genre size (10 tracks):

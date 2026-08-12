@@ -298,11 +298,46 @@ def get_or_create_folder(session, folder_name):
 
 def get_playlists_in_folder(session, folder_id):
     """
-    Returns a list of playlists existing in the specified folder.
+    Returns a list of playlists existing in the specified folder, handling pagination.
     """
     try:
         folder = tidalapi.playlist.Folder(session, folder_id)
-        return list(folder.items())
+        all_items = []
+        cursor = None
+        
+        while True:
+            params = {
+                "folderId": folder_id,
+                "limit": 50,
+                "order": "NAME",
+                "includeOnly": "PLAYLIST",
+            }
+            if cursor:
+                params["cursor"] = cursor
+                
+            endpoint = "my-collection/playlists/folders"
+            json_obj = session.request.request(
+                "GET",
+                endpoint,
+                base_url=session.config.api_v2_location,
+                params=params,
+            ).json()
+            
+            if json_obj.get("items"):
+                # Format to match what tidalapi expects
+                for item in json_obj["items"]:
+                    if "title" in item["data"] and "name" not in item["data"]:
+                        item["data"]["name"] = item["data"]["title"]
+                
+                playlists = {"items": [item["data"] for item in json_obj.get("items")]}
+                items = session.request.map_json(playlists, parse=session.parse_playlist)
+                all_items.extend(items)
+                
+            cursor = json_obj.get("cursor")
+            if not cursor:
+                break
+                
+        return all_items
     except Exception as e:
         logging.warning(f"Could not read items in folder {folder_id}: {e}")
         return []
@@ -316,7 +351,7 @@ def get_playlist_tracks(session, playlist_id):
         return playlist.tracks_paginated()
     except Exception as e:
         logging.warning(f"Could not read tracks for playlist {playlist_id}: {e}")
-        return []
+        return None
 
 def sync_playlist_tracks(session, playlist_id, to_add_ids, to_remove_ids):
     """
@@ -330,6 +365,7 @@ def sync_playlist_tracks(session, playlist_id, to_add_ids, to_remove_ids):
                     playlist.delete_by_id([str(x) for x in to_remove_ids[i:i+50]])
                 except HTTPError as e:
                     if getattr(e, 'response', None) is not None and e.response.status_code == 412:
+                        logging.info(f"Tidal API returned 412 (concurrent modification). Waiting 1s and retrying deletion...")
                         time.sleep(1)
                         playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
                         playlist.delete_by_id([str(x) for x in to_remove_ids[i:i+50]])
@@ -341,15 +377,16 @@ def sync_playlist_tracks(session, playlist_id, to_add_ids, to_remove_ids):
                     playlist.add([str(x) for x in to_add_ids[i:i+50]])
                 except HTTPError as e:
                     if getattr(e, 'response', None) is not None and e.response.status_code == 412:
+                        logging.info(f"Tidal API returned 412 (concurrent modification). Waiting 1s and retrying addition...")
                         time.sleep(1)
                         playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
                         playlist.add([str(x) for x in to_add_ids[i:i+50]])
                     else:
                         raise
+        return True
     except Exception as e:
         logging.error(f"Failed to sync playlist {playlist_id}: {e}")
-        raise
-
+        return False
 
 def delete_playlist(session, playlist_id):
     """
@@ -357,9 +394,11 @@ def delete_playlist(session, playlist_id):
     """
     try:
         playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
+        # Attempt to delete, handling cases where it might not exist or the ID is malformed
         playlist.delete()
     except Exception as e:
-        logging.error(f"Failed to delete playlist {playlist_id}: {e}")
+        # Avoid crashing the sync process if deletion fails (e.g. 404 Not Found)
+        logging.warning(f"Could not delete playlist {playlist_id}: {e}")
 
 def create_playlist_in_folder(session, name, description, folder_id, track_ids):
     """
