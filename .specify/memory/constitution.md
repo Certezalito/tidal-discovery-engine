@@ -1,13 +1,10 @@
 <!--
 Sync Impact Report:
-- **Version Change**: 1.7.0 → 1.8.0
-- **Modified Principles**: None
-- **Added Principles / Sections**:
-  - Principle VIII: Grounded Metadata & Zero ISRC Hallucination (prohibiting LLMs from generating ISRCs and mandating authoritative catalog resolution).
-  - Quality Gate: Zero ISRC Hallucination (enforcing that AI prompts, schemas, and completion handlers do not request or accept synthetic ISRCs).
-  - Compliance Review Expectations: Explicit verification against synthetic/hallucinated ISRC generation.
-- **Removed Sections**: None
-- **Templates requiring updates**: `.specify/templates/plan-template.md`, `.specify/templates/spec-template.md`, `.specify/templates/tasks-template.md` (✅ aligned/no structural changes needed)
+- **Version Change**: 1.8.0 → 1.8.1
+- **Modified Principles**: Principle VIII (Grounded Metadata & Zero ISRC Hallucination) streamlined to eliminate internal duplication.
+- **Added Principles / Sections**: None
+- **Removed Sections**: None (De-duplicated the verbatim restatement in the Quality Gates section into a concise compliance check referencing Principle VIII).
+- **Templates requiring updates**: None
 - **Follow-up TODOs**: None
 -->
 # Tidal Discovery Engine Constitution
@@ -70,19 +67,18 @@ items consumes unnecessary API quota, increases execution time, and slows down l
 
 ### VIII. Grounded Metadata & Zero ISRC Hallucination
 Generative AI models MUST NOT be prompted or expected to generate International Standard
-Recording Codes (ISRCs) or opaque catalog identifiers. Prompts and structured output schemas
-for AI recommendation or playlist generation MUST restrict song requests to verifiable
-human-readable attributes (specifically artist and title). All track resolution against Tidal
-or other streaming service APIs MUST rely on authoritative catalog searches (such as artist and
-title search) or verified track metadata, never on synthetic or hallucinated codes. Any ISRC
-stored or processed within the application MUST originate directly from authoritative provider
-APIs or authenticated library tracks.
+Recording Codes (ISRCs) or opaque catalog identifiers; prompts and structured output schemas
+MUST restrict track requests to verifiable human-readable attributes (artist and title). All track
+resolution against Tidal or other streaming service APIs MUST rely exclusively on authoritative
+catalog search or verified track metadata, never on synthetic codes. Any ISRC stored or processed
+within the application MUST originate directly from authoritative provider APIs or authenticated
+library tracks.
 
 Rationale: Large language models frequently hallucinate plausible-looking but non-existent or
-mismatched 12-character ISRC codes. Demanding or accepting AI-generated ISRCs causes catalog
-lookup failures, degraded recommendation accuracy, wasted API quota, and non-deterministic
-behavior. Enforcing strict grounding in verified catalog data preserves playlist integrity and
-eliminates silent matching errors.
+mismatched 12-character ISRC codes. Demanding or accepting AI-generated ISRCs causes lookup
+failures, degraded recommendation accuracy, wasted API quota, and non-deterministic behavior.
+Enforcing strict grounding in verified catalog data preserves playlist integrity and eliminates
+silent matching errors.
 
 ## Mission
 To create a personalized music discovery tool that seamlessly integrates with a
@@ -111,11 +107,9 @@ the creation of new playlists to enrich the user's listening experience.
   playlist updates (e.g., genre playlist sorting) MUST handle pagination, batching,
   and API rate limits gracefully, ensuring operations are idempotent and re-runnable
   without duplicating playlists or tracks.
-- **Zero ISRC Hallucination**: AI prompts, schemas, and completion parsers MUST NOT
-  request or accept synthetic ISRC codes from LLMs. Track resolution for AI suggestions
-  MUST use string-based search (artist and title) against the provider catalog or verified
-  catalog lookups. ISRCs are strictly reserved for authoritative metadata retrieved directly
-  from streaming service APIs or authenticated library items.
+- **Zero ISRC Hallucination**: AI prompts, schemas, and completion handlers MUST
+  strictly comply with Principle VIII by prohibiting synthetic ISRC generation and
+  requiring string-based catalog search for track resolution.
 - **Validation**: Behavior changes MUST include targeted automated checks covering
   the affected CLI flow, service behavior, or error handling. Pure documentation-only
   changes may satisfy this gate with linting or direct content validation.
@@ -154,4 +148,4 @@ Compliance Review Expectations:
   required targeted validation, fail understandability checks, invent unknown
   facts without authoritative verification, or prompt/rely on AI-generated ISRC codes.
 
-**Version**: 1.8.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-09-03
+**Version**: 1.8.1 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-09-03
