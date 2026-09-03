@@ -1,8 +1,11 @@
 <!--
 Sync Impact Report:
-- **Version Change**: 1.6.0 → 1.7.0
-- **Modified Principles**: Principle I (User-Centricity & Understandability) expanded to explicitly mandate documenting all parameter/default changes in README.md.
-- **Added Sections**: Quality Gate documentation rule explicitly requiring README updates for parameter or default value changes.
+- **Version Change**: 1.7.0 → 1.8.0
+- **Modified Principles**: None
+- **Added Principles / Sections**:
+  - Principle VIII: Grounded Metadata & Zero ISRC Hallucination (prohibiting LLMs from generating ISRCs and mandating authoritative catalog resolution).
+  - Quality Gate: Zero ISRC Hallucination (enforcing that AI prompts, schemas, and completion handlers do not request or accept synthetic ISRCs).
+  - Compliance Review Expectations: Explicit verification against synthetic/hallucinated ISRC generation.
 - **Removed Sections**: None
 - **Templates requiring updates**: `.specify/templates/plan-template.md`, `.specify/templates/spec-template.md`, `.specify/templates/tasks-template.md` (✅ aligned/no structural changes needed)
 - **Follow-up TODOs**: None
@@ -65,6 +68,22 @@ runs.
 Rationale: Re-querying AI or music APIs for static track metadata or previously classified library
 items consumes unnecessary API quota, increases execution time, and slows down library-wide automation.
 
+### VIII. Grounded Metadata & Zero ISRC Hallucination
+Generative AI models MUST NOT be prompted or expected to generate International Standard
+Recording Codes (ISRCs) or opaque catalog identifiers. Prompts and structured output schemas
+for AI recommendation or playlist generation MUST restrict song requests to verifiable
+human-readable attributes (specifically artist and title). All track resolution against Tidal
+or other streaming service APIs MUST rely on authoritative catalog searches (such as artist and
+title search) or verified track metadata, never on synthetic or hallucinated codes. Any ISRC
+stored or processed within the application MUST originate directly from authoritative provider
+APIs or authenticated library tracks.
+
+Rationale: Large language models frequently hallucinate plausible-looking but non-existent or
+mismatched 12-character ISRC codes. Demanding or accepting AI-generated ISRCs causes catalog
+lookup failures, degraded recommendation accuracy, wasted API quota, and non-deterministic
+behavior. Enforcing strict grounding in verified catalog data preserves playlist integrity and
+eliminates silent matching errors.
+
 ## Mission
 To create a personalized music discovery tool that seamlessly integrates with a
 user's Tidal library, leverages Last.fm's recommendation engine, and automates
@@ -92,6 +111,11 @@ the creation of new playlists to enrich the user's listening experience.
   playlist updates (e.g., genre playlist sorting) MUST handle pagination, batching,
   and API rate limits gracefully, ensuring operations are idempotent and re-runnable
   without duplicating playlists or tracks.
+- **Zero ISRC Hallucination**: AI prompts, schemas, and completion parsers MUST NOT
+  request or accept synthetic ISRC codes from LLMs. Track resolution for AI suggestions
+  MUST use string-based search (artist and title) against the provider catalog or verified
+  catalog lookups. ISRCs are strictly reserved for authoritative metadata retrieved directly
+  from streaming service APIs or authenticated library items.
 - **Validation**: Behavior changes MUST include targeted automated checks covering
   the affected CLI flow, service behavior, or error handling. Pure documentation-only
   changes may satisfy this gate with linting or direct content validation.
@@ -127,7 +151,7 @@ Compliance Review Expectations:
 - All PRs and reviews MUST verify compliance with Core Principles and Quality
   Gates.
 - Reviewers MUST reject feature changes that lack documentation updates, skip
-  required targeted validation, fail understandability checks, or invent unknown
-  facts without authoritative verification.
+  required targeted validation, fail understandability checks, invent unknown
+  facts without authoritative verification, or prompt/rely on AI-generated ISRC codes.
 
-**Version**: 1.7.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-07-23
+**Version**: 1.8.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-09-03
