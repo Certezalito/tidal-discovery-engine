@@ -1,9 +1,9 @@
 <!--
 Sync Impact Report:
-- **Version Change**: 1.8.0 → 1.8.1
-- **Modified Principles**: Principle VIII (Grounded Metadata & Zero ISRC Hallucination) streamlined to eliminate internal duplication.
-- **Added Principles / Sections**: None
-- **Removed Sections**: None (De-duplicated the verbatim restatement in the Quality Gates section into a concise compliance check referencing Principle VIII).
+- **Version Change**: 1.8.1 → 1.9.0
+- **Modified Principles**: None
+- **Added Principles / Sections**: Principle IX (CLI Ergonomics & Friction Reduction); CLI Ergonomics & Sensible Defaults quality gate under Technical Standards & Workflow.
+- **Removed Sections**: None
 - **Templates requiring updates**: None
 - **Follow-up TODOs**: None
 -->
@@ -80,6 +80,20 @@ failures, degraded recommendation accuracy, wasted API quota, and non-determinis
 Enforcing strict grounding in verified catalog data preserves playlist integrity and eliminates
 silent matching errors.
 
+### IX. CLI Ergonomics & Friction Reduction
+Command-line interfaces and interactive workflows MUST prioritize ergonomic design
+to minimize user friction, cognitive load, and unnecessary typing. CLI commands MUST
+provide short, memorable, industry-standard names alongside descriptive aliases where
+beneficial (such as `radio` alongside `track-radio`). Commands MUST provide intelligent,
+sensible defaults for optional arguments (such as destination playlist naming and standard
+track counts) to enable zero-friction, single-command quick execution. Error messages and
+validation prompts MUST be concise, actionable, and immediately guide the user toward the
+correct syntax without requiring external documentation.
+
+Rationale: CLI tools are most effective and delightful when common tasks can be invoked
+spontaneously with minimal friction. Overly verbose or strictly rigid argument requirements
+discourage casual daily usage and increase user errors.
+
 ## Mission
 To create a personalized music discovery tool that seamlessly integrates with a
 user's Tidal library, leverages Last.fm's recommendation engine, and automates
@@ -110,6 +124,10 @@ the creation of new playlists to enrich the user's listening experience.
 - **Zero ISRC Hallucination**: AI prompts, schemas, and completion handlers MUST
   strictly comply with Principle VIII by prohibiting synthetic ISRC generation and
   requiring string-based catalog search for track resolution.
+- **CLI Ergonomics & Sensible Defaults**: New commands and CLI modifications MUST
+  prioritize user ergonomics. Commands SHOULD support concise primary names with aliasing
+  for discoverability, provide intelligent defaults for optional parameters to avoid
+  unnecessary mandatory flags, and ensure validation errors provide immediate syntax guidance.
 - **Validation**: Behavior changes MUST include targeted automated checks covering
   the affected CLI flow, service behavior, or error handling. Pure documentation-only
   changes may satisfy this gate with linting or direct content validation.
@@ -145,7 +163,9 @@ Compliance Review Expectations:
 - All PRs and reviews MUST verify compliance with Core Principles and Quality
   Gates.
 - Reviewers MUST reject feature changes that lack documentation updates, skip
-  required targeted validation, fail understandability checks, invent unknown
-  facts without authoritative verification, or prompt/rely on AI-generated ISRC codes.
+  required targeted validation, fail understandability checks, introduce awkward or
+  excessively verbose CLI requirements when concise ergonomics and sensible defaults
+  could be provided, invent unknown facts without authoritative verification, or
+  prompt/rely on AI-generated ISRC codes.
 
-**Version**: 1.8.1 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-09-03
+**Version**: 1.9.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-09-03
