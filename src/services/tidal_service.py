@@ -166,37 +166,49 @@ def get_random_favorite_tracks(session, num_tracks):
         
     return random.sample(favorite_tracks, num_tracks)
 
-def create_playlist(session, name, num_tidal_tracks, num_similar_tracks, seed_tracks, final_tags, no_similar_tracks_seeds=None, folder_id=None, tracks=None):
+def format_seed_playlist_description(artist, track, track_count, genre_mix_summary=""):
     run_date = datetime.date.today().isoformat()
-    
-    seed_track_list = " | ".join([f"{t.title} by {t.artist.name}" for t in seed_tracks])
-    
-    # Create a "Genre Mix" summary
-    genre_mix_summary = ""
-    if final_tags:
-        from collections import Counter
-        total_tags = len(final_tags)
-        top_5_genres = Counter(final_tags).most_common(5)
-        
-        genre_items = []
-        for genre, count in top_5_genres:
-            percentage = (count / total_tags) * 100
-            genre_items.append(f"{genre.title()}: {percentage:.0f}%")
-        genre_mix_summary = " Genre Mix: " + " | ".join(genre_items) + "."
-
-    no_similar_tracks_summary = ""
-    if no_similar_tracks_seeds:
-        no_similar_tracks_list = " | ".join([f"{t.title} by {t.artist.name}" for t in no_similar_tracks_seeds])
-        no_similar_tracks_summary = f" No similar tracks found for: {no_similar_tracks_list}."
-
-    track_ids = [t.id for t in tracks] if tracks else []
-    description = (
+    desc = (
+        f"Track radio generated from seed track: '{track}' by {artist}. "
         f"Generated on {run_date}. "
-        f"Based on {num_tidal_tracks} seed tracks: {seed_track_list}. "
-        f"Inserted {len(track_ids)} tracks into this playlist."
-        f"{genre_mix_summary}"
-        f"{no_similar_tracks_summary}"
+        f"Inserted {track_count} tracks into this playlist.{genre_mix_summary}"
     )
+    if len(desc) > 500:
+        desc = desc[:497] + "..."
+    return desc
+
+def create_playlist(session, name, num_tidal_tracks, num_similar_tracks, seed_tracks, final_tags, no_similar_tracks_seeds=None, folder_id=None, tracks=None, description=None):
+    run_date = datetime.date.today().isoformat()
+    track_ids = [t.id for t in tracks] if tracks else []
+
+    if description is None:
+        seed_track_list = " | ".join([f"{t.title} by {t.artist.name}" for t in seed_tracks])
+        
+        # Create a "Genre Mix" summary
+        genre_mix_summary = ""
+        if final_tags:
+            from collections import Counter
+            total_tags = len(final_tags)
+            top_5_genres = Counter(final_tags).most_common(5)
+            
+            genre_items = []
+            for genre, count in top_5_genres:
+                percentage = (count / total_tags) * 100
+                genre_items.append(f"{genre.title()}: {percentage:.0f}%")
+            genre_mix_summary = " Genre Mix: " + " | ".join(genre_items) + "."
+
+        no_similar_tracks_summary = ""
+        if no_similar_tracks_seeds:
+            no_similar_tracks_list = " | ".join([f"{t.title} by {t.artist.name}" for t in no_similar_tracks_seeds])
+            no_similar_tracks_summary = f" No similar tracks found for: {no_similar_tracks_list}."
+
+        description = (
+            f"Generated on {run_date}. "
+            f"Based on {num_tidal_tracks} seed tracks: {seed_track_list}. "
+            f"Inserted {len(track_ids)} tracks into this playlist."
+            f"{genre_mix_summary}"
+            f"{no_similar_tracks_summary}"
+        )
 
     # Truncate the description if it's too long
     if len(description) > 500:

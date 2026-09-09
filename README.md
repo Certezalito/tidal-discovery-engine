@@ -40,11 +40,11 @@ A command-line tool that generates Tidal playlists with recommended tracks using
 
 ## Commands
 
-The CLI supports two primary commands: `recommend` and `genre-playlist`. Each command has its own set of options.
+The CLI supports three commands: `recommend`, `radio`, and `genre-playlist`. Each command has its own set of options.
 
 ### `recommend`
 
-Generates a new Tidal playlist with recommended tracks based on a selection of your favorite tracks or a specific seed track.
+Generates a new Tidal playlist with recommended tracks based on a selection of your favorite tracks.
 
 **Quick start** — generate a playlist from your Tidal favorites using Last.fm recommendations:
 
@@ -98,20 +98,55 @@ uv run python -m src.cli.main recommend --gemini --shuffle --playlist-name "TDE 
 
 Expected outcome: A playlist of lesser-known, underground tracks selected by AI for a more adventurous listening experience.
 
-#### Single Seed Track
+### `radio`
 
-Generates a playlist based on one specific song. Both `--artist` and `--track` must be provided together.
+Generates a dedicated track radio playlist seeded with a specific song. The seed track is placed at **Track #1** on Tidal, followed by recommendations up to the requested total count (default **50 tracks**: 1 seed + 49 recommendations).
 
-**Last.fm path:**
+**Quick start** — generate a track radio playlist with defaults:
 
 ```bash
-uv run python -m src.cli.main recommend --artist "Lost Tribe" --track "Gamemaster" --num-similar-tracks 1000 --playlist-name "Gamemaster Vibes" --folder "Tidal Discovery Engine"
+uv run python -m src.cli.main radio --artist "Underworld" --track "Born Slippy"
 ```
 
-**Gemini path:**
+Expected outcome:
+- Playlist named `"Underworld - Born Slippy Radio"` containing 50 tracks total.
+- Track #1 is `"Born Slippy"` by Underworld.
+- Tracks #2–#50 are 49 recommendations from Last.fm.
+- Playlist description includes seed metadata: `"Seed track: Born Slippy by Underworld • Total tracks: 50"`.
+- Playlist is organized inside the `"Radio"` folder on Tidal by default.
+
+#### Dynamic Date in Playlist Name
+
+Use `{date}` to automatically insert today's date (`YYYYMMDD`):
 
 ```bash
-uv run python -m src.cli.main recommend --artist "Lost Tribe" --track "Gamemaster" --gemini --num-similar-tracks 20 --playlist-name "Gamemaster Gemini" --folder "Tidal Discovery Engine"
+uv run python -m src.cli.main radio --artist "Underworld" --track "Born Slippy" --playlist-name "Born Slippy Radio {date}"
+```
+
+#### Gemini AI Recommendations
+
+Use Google Gemini AI instead of Last.fm for recommendations:
+
+```bash
+uv run python -m src.cli.main radio --artist "Burial" --track "Archangel" --gemini
+```
+
+- **With `--shuffle`**: Instructs Gemini to discover deep cuts, underground gems, and lesser-known adjacent tracks.
+- **Graceful fallback**: If the configured Gemini model is unavailable, the command automatically falls back to Last.fm recommendations with a warning.
+
+#### Advanced Options & Organization
+
+Exclude existing Tidal favorites and file the playlist into a custom folder (overriding the default `"Radio"` folder):
+
+```bash
+uv run python -m src.cli.main radio \
+  --artist "Burial" \
+  --track "Archangel" \
+  --gemini \
+  --shuffle \
+  --exclude-favorites \
+  --folder "Electronic Stations" \
+  --num-tracks 30
 ```
 
 ### `genre-playlist`
@@ -154,10 +189,22 @@ Expected outcome: A folder is created (or reused), containing playlists for each
 | `--num-tidal-tracks` | Number of random favorite tracks to select as seeds. | `10` | No |
 | `--num-similar-tracks` | Number of similar tracks to retrieve per seed. | `5` | No |
 | `--shuffle` | Changes recommendation behavior (deep cuts/variety). | `False` | No |
-| `--artist` | Artist name for single-seed mode. | — | No |
-| `--track` | Track title for single-seed mode. | — | No |
 | `--exclude-favorites` | Exclude tracks already present in your Tidal favorites. | `False` | No |
 | `--folder` | Tidal folder to place the playlist in. | — | No |
+
+### `radio` Parameters
+
+| Option | Description | Default | Required |
+| --- | --- | --- | --- |
+| `--artist` | Artist name of the seed track. | — | **Yes** |
+| `--track` | Track title of the seed track. | — | **Yes** |
+| `--playlist-name` | Custom name for the new Tidal playlist. Use `{date}` for dynamic date. | `"{artist} - {track} Radio"` | No |
+| `--num-tracks` | Desired total number of tracks (1 seed at Track #1 + recommendations). | `50` | No |
+| `--num-similar-tracks` | Alias for `--num-tracks`. | `50` | No |
+| `--gemini` | Use Google Gemini AI for recommendations instead of Last.fm. | `False` | No |
+| `--shuffle` | Deep cuts with Gemini AI or shuffle with Last.fm. | `False` | No |
+| `--exclude-favorites` | Exclude tracks already present in your Tidal favorites. | `False` | No |
+| `--folder` | Tidal folder to place the playlist in. | `Radio` | No |
 
 ### `genre-playlist` Parameters
 
@@ -180,18 +227,18 @@ Expected outcome: A folder is created (or reused), containing playlists for each
 1. Check the value of `GEMINI_MODEL` in your `.env` file or exported environment variable. Verify the model name is valid and currently available.
 2. If you have `GEMINI_FALLBACK_MODEL` configured, the CLI will automatically attempt to use it. Verify that the fallback model name is also valid.
 3. If neither model works, remove the `--gemini` flag to use Last.fm recommendations instead.
-4. In `recommend` mode with a single seed, the CLI automatically falls back to Last.fm when Gemini is unavailable.
+4. In `radio` mode, the CLI automatically falls back to Last.fm when Gemini is unavailable.
 
-### `recommend` Missing Required Options
+### `radio` Missing Required Options
 
-**Symptoms:** The CLI exits with an error: `"Both --artist and --track are required together for single-seed mode."`
+**Symptoms:** The CLI exits with an error: `"Missing option '--artist'"` or `"Missing option '--track'"`.
 
-**Explanation:** Single-seed mode requires both `--artist` and `--track` to identify the song.
+**Explanation:** `radio` requires both `--artist` and `--track` to identify the seed track.
 
 **Corrective action:** Provide both options together:
 
 ```bash
-uv run python -m src.cli.main recommend --artist "Lost Tribe" --track "Gamemaster" --num-similar-tracks 20 --playlist-name "Seed Playlist"
+uv run python -m src.cli.main radio --artist "Lost Tribe" --track "Gamemaster"
 ```
 
 ### Authentication or Quota Failure

@@ -311,7 +311,7 @@ class TestExcludeFavoritesCLI(unittest.TestCase):
 
         result = self.runner.invoke(
             main,
-            ['recommend', 
+            ['radio', 
                 "--gemini",
                 "--playlist-name",
                 "Test Playlist",
@@ -319,7 +319,7 @@ class TestExcludeFavoritesCLI(unittest.TestCase):
                 "Seed Artist",
                 "--track",
                 "Seed Title",
-                "--num-similar-tracks",
+                "--num-tracks",
                 "1",
             ],
             env={"GEMINI_API_KEY": "test-key"},
