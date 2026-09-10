@@ -17,6 +17,7 @@ from src.lib.logging import (
     SEED_NOT_RESOLVED_ON_TIDAL,
 )
 from src.services import tidal_service, lastfm_service, gemini_service
+from src.services.genre_organizer_service import run_genre_organizer_sync
 from src.services.genre_playlist_service import run_genre_playlist_sync
 from src.services.gemini_service import GeminiModelUnavailableError
 
@@ -654,33 +655,28 @@ def recommend(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_na
         log_cli_error("PLAYLIST_GENERATION_FAILED", "Unhandled error during playlist generation.", details=str(e))
         raise click.ClickException(str(e))
 
-@cli.command("genre-playlist")
-@click.option("--folder", default="Genres", help="Destination folder name for the genre playlists. Overrides configuration.")
-@click.option("--min-genre-size", default=10, type=int, help="Minimum number of tracks required for a genre playlist. Genres with fewer tracks are grouped into an 'Others' playlist.")
-@click.option("--db-path", default="data/genre_cache.db", type=click.Path(), help="Path to the SQLite database cache file.")
-def genre_playlist_cmd(folder, min_genre_size, db_path):
+def _execute_genre_organizer(folder: str, min_genre_size: int, db_path: str):
     """
-    Reads the full Tidal library, categorizes tracks by genre via Gemini using a local database cache,
-    and syncs genre playlists into the specified folder.
+    Shared execution handler for genre organizer synchronization.
     """
     setup_logging()
-    logging.info(f"Starting genre playlist sync in folder '{folder}' with min genre size {min_genre_size}...")
+    logging.info(f"Starting genre organizer sync in folder '{folder}' with min genre size {min_genre_size}...")
 
     try:
         tidal_session = tidal_service.get_session()
         
         # Verify Gemini is configured
         if "GEMINI_API_KEY" not in os.environ:
-            raise click.ClickException("genre-playlist requires GEMINI_API_KEY environment variable.")
+            raise click.ClickException("genre organizer requires GEMINI_API_KEY environment variable.")
             
-        summary = run_genre_playlist_sync(
+        summary = run_genre_organizer_sync(
             tidal_session,
             folder,
             min_genre_size=min_genre_size,
             db_path=db_path,
         )
         
-        logging.info("Genre playlist sync complete.")
+        logging.info("Genre organizer sync complete.")
         logging.info(f"Tracks scanned: {summary.library_tracks_scanned}")
         logging.info(f"Cache hits: {summary.cache_hits}")
         logging.info(f"Cache misses: {summary.cache_misses}")
@@ -697,7 +693,7 @@ def genre_playlist_cmd(folder, min_genre_size, db_path):
         logging.info(f"Tracks Added:           {summary.tracks_added}")
         logging.info(f"Tracks Removed:         {summary.tracks_removed}")
 
-        click.echo("\n--- Genre Playlist Sync Summary ---")
+        click.echo("\n--- Genre Organizer Sync Summary ---")
         click.echo(f"Library Tracks Scanned: {summary.library_tracks_scanned}")
         click.echo(f"Database Cache Hits:    {summary.cache_hits}")
         click.echo(f"Gemini API Queries:     {summary.cache_misses}")
@@ -714,8 +710,42 @@ def genre_playlist_cmd(folder, min_genre_size, db_path):
         click.echo("------------------------------------")
 
     except Exception as e:
-        logging.exception(f"Failed to run genre-playlist: {e}")
+        logging.exception(f"Failed to run genre organizer: {e}")
         raise click.ClickException(str(e))
+
+@cli.command("organize")
+@click.option("--folder", default="Genres", help="Destination folder name for the genre playlists. Overrides configuration.")
+@click.option("--min-genre-size", default=10, type=int, help="Minimum number of tracks required for a genre playlist. Genres with fewer tracks are grouped into an 'Others' playlist.")
+@click.option("--db-path", default="data/genre_cache.db", type=click.Path(), help="Path to the SQLite database cache file.")
+def organize_cmd(folder, min_genre_size, db_path):
+    """
+    Reads the full Tidal library, categorizes tracks by genre via Gemini using a local database cache,
+    and syncs genre playlists into the specified folder.
+    """
+    _execute_genre_organizer(folder, min_genre_size, db_path)
+
+@cli.command("genre-organizer")
+@click.option("--folder", default="Genres", help="Destination folder name for the genre playlists. Overrides configuration.")
+@click.option("--min-genre-size", default=10, type=int, help="Minimum number of tracks required for a genre playlist. Genres with fewer tracks are grouped into an 'Others' playlist.")
+@click.option("--db-path", default="data/genre_cache.db", type=click.Path(), help="Path to the SQLite database cache file.")
+def genre_organizer_cmd(folder, min_genre_size, db_path):
+    """
+    Alias for 'organize'. Reads the full Tidal library, categorizes tracks by genre via Gemini using a local database cache,
+    and syncs genre playlists into the specified folder.
+    """
+    _execute_genre_organizer(folder, min_genre_size, db_path)
+
+@cli.command(
+    "genre-playlist",
+    hidden=True,
+    context_settings=dict(ignore_unknown_options=True, allow_extra_args=True),
+)
+@click.pass_context
+def legacy_genre_playlist_cmd(ctx):
+    """
+    Retired legacy command stub. Directs users to the new organize command.
+    """
+    raise click.ClickException("'genre-playlist' was renamed to 'organize' (alias: 'genre-organizer').")
 
 if __name__ == '__main__':
     cli()

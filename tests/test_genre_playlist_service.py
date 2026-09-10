@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import MagicMock, patch
-from src.services.genre_playlist_service import (
+from src.services.genre_organizer_service import (
     calculate_sync_delta,
-    run_genre_playlist_sync,
+    run_genre_organizer_sync as run_genre_playlist_sync,
 )
 
 

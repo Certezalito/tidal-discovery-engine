@@ -40,7 +40,7 @@ A command-line tool that generates Tidal playlists with recommended tracks using
 
 ## Commands
 
-The CLI supports three commands: `recommend`, `radio`, and `genre-playlist`. Each command has its own set of options.
+The CLI supports three commands: `recommend`, `radio`, and `organize` (alias: `genre-organizer`). Each command has its own set of options.
 
 ### `recommend`
 
@@ -149,9 +149,9 @@ uv run python -m src.cli.main radio \
   --num-tracks 30
 ```
 
-### `genre-playlist`
+### `organize` (alias: `genre-organizer`)
 
-> ⚠️ **DESTRUCTIVE OPERATION**: The `genre-playlist` command strictly owns the folder it targets. **Any playlists in the target folder that do not match the expected generated genres (including manually created playlists) will be permanently deleted.** Do not point this command at a folder containing your personal manual playlists.
+> ⚠️ **DESTRUCTIVE OPERATION**: The `organize` command strictly owns the folder it targets. **Any playlists in the target folder that do not match the expected generated genres (including manually created playlists) will be permanently deleted.** Do not point this command at a folder containing your personal manual playlists.
 
 
 Reads your entire Tidal library, uses Gemini to classify each track by genre, and creates or syncs one playlist per genre inside a dedicated folder. This mode helps you organize your entire library automatically.
@@ -159,18 +159,24 @@ Reads your entire Tidal library, uses Gemini to classify each track by genre, an
 **First Run & Syncing** — organize your library into a folder named "Genres" (the default folder name) with the default minimum genre size (10 tracks):
 
 ```bash
-uv run python -m src.cli.main genre-playlist
+uv run python -m src.cli.main organize
+```
+
+You can also use the supported alias:
+
+```bash
+uv run python -m src.cli.main genre-organizer
 ```
 
 **Custom Folder, Threshold & Database Path** — organize into a specific folder, group genres with fewer than 10 tracks into an "Others" playlist, and specify a custom SQLite database cache file:
 
 ```bash
-uv run python -m src.cli.main genre-playlist --folder "My Music Styles" --min-genre-size 10 --db-path "data/genre_cache.db"
+uv run python -m src.cli.main organize --folder "My Music Styles" --min-genre-size 10 --db-path "data/genre_cache.db"
 ```
 
 Expected outcome: A folder is created (or reused), containing playlists for each genre identified in your library that meets the minimum track threshold. Tracks with highly niche genres (falling below the threshold) are consolidated into an "Others" playlist. Tracks with ambiguous or unidentifiable genres are placed into an "Unknown" playlist.
 
-**`genre-playlist` notes:**
+**`organize` notes:**
 - Re-running the command syncs the existing playlists by adding new tracks and removing tracks that are no longer in your library, without creating duplicates.
 - **SQLite Caching:** Track genre classification results are cached locally in an SQLite database (default: `data/genre_cache.db`). On subsequent runs, cached classifications are reused with zero Gemini token cost, and token cost reduction percentages are reported in the CLI output.
 - The command groups genres with fewer tracks than `--min-genre-size` into an "Others" playlist to limit playlist sprawl. The default threshold is 10 (so genres with 9 or fewer tracks go to "Others").
@@ -206,7 +212,9 @@ Expected outcome: A folder is created (or reused), containing playlists for each
 | `--exclude-favorites` | Exclude tracks already present in your Tidal favorites. | `False` | No |
 | `--folder` | Tidal folder to place the playlist in. | `Radio` | No |
 
-### `genre-playlist` Parameters
+### `organize` Parameters
+
+These parameters apply identically to `organize` and its alias `genre-organizer`:
 
 | Option | Description | Default | Required |
 | --- | --- | --- | --- |
