@@ -257,9 +257,9 @@ class TestCLI(unittest.TestCase):
 
 
     @patch('src.cli.main.setup_logging')
-    @patch('src.cli.main.run_genre_playlist_sync')
+    @patch('src.cli.main.run_genre_organizer_sync')
     @patch('src.services.tidal_service.get_session')
-    def test_genre_playlist_folder_precedence(self, mock_get_session, mock_run_sync, mock_setup_logging):
+    def test_organize_folder_precedence(self, mock_get_session, mock_run_sync, mock_setup_logging):
         mock_get_session.return_value = MagicMock()
         mock_summary = MagicMock()
         mock_summary.library_tracks_scanned = 0
@@ -278,7 +278,7 @@ class TestCLI(unittest.TestCase):
         # CLI argument provided
         result = self.runner.invoke(
             cli,
-            ['genre-playlist', '--folder', 'My Custom Genres'],
+            ['organize', '--folder', 'My Custom Genres'],
             env={'GEMINI_API_KEY': 'test-key'}
         )
         
@@ -288,7 +288,7 @@ class TestCLI(unittest.TestCase):
         # CLI argument absent (defaults to "Genres")
         result2 = self.runner.invoke(
             cli,
-            ['genre-playlist'],
+            ['organize'],
             env={'GEMINI_API_KEY': 'test-key'}
         )
         
@@ -296,11 +296,11 @@ class TestCLI(unittest.TestCase):
         mock_run_sync.assert_called_with(mock_get_session.return_value, 'Genres', min_genre_size=10, db_path='data/genre_cache.db')
 
     @patch('src.cli.main.setup_logging')
-    @patch('src.cli.main.run_genre_playlist_sync')
+    @patch('src.cli.main.run_genre_organizer_sync')
     @patch('src.services.tidal_service.get_session')
-    def test_genre_playlist_rerun_sync_metrics(self, mock_get_session, mock_run_sync, mock_setup_logging):
+    def test_organize_rerun_sync_metrics(self, mock_get_session, mock_run_sync, mock_setup_logging):
         """
-        T018 [US2] Add CLI rerun test verifying no duplicate playlists and synced membership
+        Add CLI rerun test verifying no duplicate playlists and synced membership
         """
         mock_get_session.return_value = MagicMock()
         mock_summary = MagicMock()
@@ -319,7 +319,7 @@ class TestCLI(unittest.TestCase):
 
         result = self.runner.invoke(
             cli,
-            ['genre-playlist'],
+            ['organize'],
             env={'GEMINI_API_KEY': 'test-key'}
         )
         
@@ -329,27 +329,27 @@ class TestCLI(unittest.TestCase):
     @patch('src.cli.main.setup_logging')
     @patch('src.services.tidal_service.fetch_all_favorite_tracks')
     @patch('src.services.tidal_service.get_session')
-    def test_genre_playlist_empty_library(self, mock_get_session, mock_fetch, mock_setup_logging):
+    def test_organize_empty_library(self, mock_get_session, mock_fetch, mock_setup_logging):
         """
-        T024 [P] Add edge-case test coverage for empty libraries
+        Add edge-case test coverage for empty libraries
         """
         mock_get_session.return_value = MagicMock()
         mock_fetch.return_value = ([], 0)
 
         result = self.runner.invoke(
             cli,
-            ['genre-playlist', '--folder', 'My Custom Genres'],
+            ['organize', '--folder', 'My Custom Genres'],
             env={'GEMINI_API_KEY': 'test-key'}
         )
         
         self.assertEqual(result.exit_code, 0)
 
     @patch('src.cli.main.setup_logging')
-    @patch('src.cli.main.run_genre_playlist_sync')
+    @patch('src.cli.main.run_genre_organizer_sync')
     @patch('src.services.tidal_service.get_session')
-    def test_genre_playlist_min_genre_size_passed(self, mock_get_session, mock_run_sync, mock_setup_logging):
+    def test_organize_min_genre_size_passed(self, mock_get_session, mock_run_sync, mock_setup_logging):
         """
-        T010b [P] [US1] Add CLI test for `--min-genre-size` threshold grouping into "Others"
+        Add CLI test for `--min-genre-size` threshold grouping into "Others"
         """
         mock_get_session.return_value = MagicMock()
         mock_summary = MagicMock()
@@ -367,7 +367,7 @@ class TestCLI(unittest.TestCase):
         # Default is 10
         result = self.runner.invoke(
             cli,
-            ['genre-playlist'],
+            ['organize'],
             env={'GEMINI_API_KEY': 'test-key'}
         )
         self.assertEqual(result.exit_code, 0)
@@ -377,7 +377,7 @@ class TestCLI(unittest.TestCase):
         # Override to 15
         result2 = self.runner.invoke(
             cli,
-            ['genre-playlist', '--min-genre-size', '15'],
+            ['organize', '--min-genre-size', '15'],
             env={'GEMINI_API_KEY': 'test-key'}
         )
         self.assertEqual(result2.exit_code, 0)
