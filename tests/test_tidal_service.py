@@ -14,6 +14,9 @@ from src.services.tidal_service import (
     add_tracks_to_playlist,
     get_playlist_tracks,
     remove_tracks_from_playlist,
+    search_tracks,
+    resolve_text_seed_track,
+    delete_playlist,
 )
 from requests.exceptions import HTTPError
 
@@ -42,6 +45,60 @@ class TestTidalServiceSearch(unittest.TestCase):
         result = search_for_track(mock_session, mock_track_input)
         
         self.assertIsNone(result)
+
+    def test_search_tracks_v2_success(self):
+        mock_session = MagicMock()
+        mock_session.config.api_v2_location = "https://api.tidal.com/v2/"
+        mock_session.parse_track.side_effect = lambda item: MagicMock(id=item["id"], title=item["title"])
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "tracks": {
+                "items": [{"id": 1234, "title": "Track Title"}]
+            }
+        }
+        mock_session.request.request.return_value = mock_response
+
+        tracks = search_tracks(mock_session, "Artist - Song", limit=5)
+        self.assertEqual(len(tracks), 1)
+        self.assertEqual(tracks[0].id, 1234)
+        mock_session.request.request.assert_called_once_with(
+            "GET",
+            "search",
+            params={"query": "Artist - Song", "limit": 5},
+            base_url="https://api.tidal.com/v2/",
+        )
+
+    def test_resolve_text_seed_track_exact_and_ambiguous_v2(self):
+        mock_session = MagicMock()
+        mock_session.config.api_v2_location = "https://api.tidal.com/v2/"
+
+        track_exact = MagicMock()
+        track_exact.name = "Exact Song"
+        track_exact.title = "Exact Song"
+        track_exact.artist = MagicMock()
+        track_exact.artist.name = "Exact Artist"
+
+        track_other = MagicMock()
+        track_other.name = "Other Song"
+        track_other.title = "Other Song"
+        track_other.artist = MagicMock()
+        track_other.artist.name = "Other Artist"
+
+        # Exact match case
+        mock_session.request.request.return_value.json.return_value = {
+            "tracks": {"items": [{"id": 1, "title": "Exact Song"}]}
+        }
+        mock_session.parse_track.return_value = track_exact
+
+        track, match_type = resolve_text_seed_track(mock_session, "Exact Artist", "Exact Song")
+        self.assertEqual(match_type, "exact")
+        self.assertEqual(track, track_exact)
+
+        # Ambiguous match case
+        mock_session.parse_track.return_value = track_other
+        track, match_type = resolve_text_seed_track(mock_session, "Exact Artist", "Different Song")
+        self.assertEqual(match_type, "ambiguous")
+        self.assertEqual(track, track_other)
 
 class TestTidalServiceFolders(unittest.TestCase):
 
@@ -651,6 +708,42 @@ class TestRemoveTracksFromPlaylist(unittest.TestCase):
         self.assertTrue(result)
         self.assertEqual(self.mock_session.request.request.call_count, 2)
         mock_sleep.assert_called_once_with(1)
+
+
+class TestDeletePlaylist(unittest.TestCase):
+    def setUp(self):
+        self.mock_session = MagicMock()
+        self.mock_session.config.api_v2_location = "https://api.tidal.com/v2/"
+
+    def test_delete_playlist_v2_success(self):
+        self.mock_session.request.request.return_value = MagicMock(status_code=204)
+        result = delete_playlist(self.mock_session, "pl-to-delete")
+        self.assertTrue(result)
+        self.mock_session.request.request.assert_called_once_with(
+            "PUT",
+            "my-collection/playlists/folders/remove",
+            params={"trns": "trn:playlist:pl-to-delete"},
+            base_url="https://api.tidal.com/v2/",
+        )
+
+    def test_delete_playlist_v2_404_handled_gracefully(self):
+        mock_resp_404 = MagicMock()
+        mock_resp_404.status_code = 404
+        self.mock_session.request.request.side_effect = HTTPError("404 Not Found", response=mock_resp_404)
+
+        result = delete_playlist(self.mock_session, "nonexistent-pl")
+        self.assertTrue(result)
+
+    @patch("src.services.tidal_service.tidalapi.playlist.UserPlaylist")
+    def test_delete_playlist_falls_back_to_legacy(self, mock_user_pl_cls):
+        self.mock_session.request.request.side_effect = Exception("v2 down")
+        mock_pl_inst = MagicMock()
+        mock_user_pl_cls.return_value = mock_pl_inst
+
+        result = delete_playlist(self.mock_session, "pl-fallback", max_retries=0)
+        self.assertTrue(result)
+        mock_user_pl_cls.assert_called_once_with(self.mock_session, "pl-fallback")
+        mock_pl_inst.delete.assert_called_once()
 
 
 if __name__ == '__main__':
