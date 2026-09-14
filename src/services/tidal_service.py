@@ -222,14 +222,64 @@ def create_playlist(session, name, num_tidal_tracks, num_similar_tracks, seed_tr
         playlist.add(track_ids)
     return playlist
 
+def search_tracks(session, query, limit=50, max_retries=3, retry_delay=1):
+    """
+    Searches for tracks using Tidal's native v2 API (GET /v2/search).
+    Falls back to legacy session.search if v2 search fails or is unavailable.
+    """
+    api_v2 = getattr(getattr(session, "config", None), "api_v2_location", None)
+    if isinstance(api_v2, str) and api_v2.startswith("http") and hasattr(session, "request"):
+        params = {"query": query, "limit": limit}
+        delay = retry_delay
+        for attempt in range(max_retries + 1):
+            try:
+                response = session.request.request(
+                    "GET",
+                    "search",
+                    params=params,
+                    base_url=session.config.api_v2_location,
+                )
+                data = response.json()
+                items = data.get("tracks", {}).get("items", [])
+                tracks = []
+                for item in items:
+                    try:
+                        if "album" in item and isinstance(item["album"], dict):
+                            item["album"].setdefault("videoCover", None)
+                        t = session.parse_track(item)
+                    except Exception:
+                        t = type("Track", (), {
+                            "id": item.get("id"),
+                            "name": item.get("title", ""),
+                            "title": item.get("title", ""),
+                            "artist": type("Artist", (), {"name": item.get("artists", [{}])[0].get("name", "")})(),
+                            "isrc": item.get("isrc"),
+                        })()
+                    tracks.append(t)
+                return tracks
+            except Exception as e:
+                if attempt < max_retries:
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                logging.warning(f"v2 search failed for query '{query}': {e}. Falling back to session.search...")
+                break
+
+    # Fallback to session.search
+    try:
+        results = session.search(query, models=[tidalapi.Track] if hasattr(tidalapi, "Track") else None, limit=limit)
+        if isinstance(results, dict):
+            return results.get("tracks", [])
+        return getattr(results, "tracks", [])
+    except Exception as e:
+        logging.error(f"Search failed for query '{query}': {e}")
+        return []
+
 def search_for_track(session, track):
     query = f"{track.artist.name} - {track.title}"
-    results = session.search(query, models=[tidalapi.Track])
-    
-    tracks = results.get('tracks', [])
+    tracks = search_tracks(session, query, limit=10)
     if tracks:
         return tracks[0]
-        
     return None
 
 def resolve_text_seed_track(session, artist_name, track_name):
@@ -241,15 +291,14 @@ def resolve_text_seed_track(session, artist_name, track_name):
     If no results are found, returns a text-only placeholder object.
     """
     search_query = f"{artist_name} {track_name}"
-    search_results = session.search(search_query, limit=50)
-    tracks = search_results.get("tracks", []) if search_results else []
+    tracks = search_tracks(session, search_query, limit=50)
 
     normalized_artist = artist_name.strip().lower()
     normalized_track = track_name.strip().lower()
 
     for track in tracks:
         track_artist = track.artist.name.strip().lower() if getattr(track, "artist", None) else ""
-        track_title = track.name.strip().lower() if getattr(track, "name", None) else ""
+        track_title = (getattr(track, "name", None) or getattr(track, "title", "")).strip().lower()
         if track_artist == normalized_artist and track_title == normalized_track:
             return track, "exact"
 
@@ -262,6 +311,7 @@ def resolve_text_seed_track(session, artist_name, track_name):
         {
             "artist": type("Artist", (), {"name": artist_name})(),
             "name": track_name,
+            "title": track_name,
         },
     )()
     return placeholder_track, "text_only"
@@ -380,63 +430,215 @@ def get_playlists_in_folder(session, folder_id, max_retries=3, retry_delay=1):
             
     return all_items
 
-def get_playlist_tracks(session, playlist_id):
+def get_playlist_tracks(session, playlist_id, max_retries=3, retry_delay=1):
     """
-    Retrieves all tracks for a given playlist.
+    Retrieves all tracks for a given playlist using Tidal's native v2 API
+    (GET /v2/playlists/{playlist_id}/items).
+    Paginates using the cursor parameter and implements retry logic with exponential backoff.
     """
-    try:
-        playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
-        return playlist.tracks_paginated()
-    except Exception as e:
-        logging.warning(f"Could not read tracks for playlist {playlist_id}: {e}")
-        return None
+    locale = getattr(session, "locale", "en_US") or "en_US"
+    all_tracks = []
+    cursor = None
+    limit = 100
+
+    while True:
+        params = {"locale": locale, "limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+
+        delay = retry_delay
+        page_data = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                response = session.request.request(
+                    "GET",
+                    f"playlists/{playlist_id}/items",
+                    params=params,
+                    base_url=session.config.api_v2_location,
+                )
+                page_data = response.json()
+                break
+            except Exception as e:
+                is_404 = False
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+                if status_code == 404 or isinstance(e, ObjectNotFound):
+                    is_404 = True
+
+                if is_404:
+                    logging.warning(f"Playlist {playlist_id} not found: {e}")
+                    return None
+
+                if attempt < max_retries:
+                    logging.warning(
+                        f"Transient error reading playlist {playlist_id} items (attempt {attempt + 1}/{max_retries + 1}): {e}. Retrying in {delay}s..."
+                    )
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+
+                logging.error(f"Failed to read playlist {playlist_id} items after {attempt + 1} attempts: {e}")
+                return None
+
+        if not page_data or not page_data.get("content"):
+            break
+
+        for entry in page_data["content"]:
+            item = entry.get("item", {})
+            item_uuid = entry.get("id")
+            if not item or "id" not in item:
+                continue
+
+            try:
+                if "album" in item and isinstance(item["album"], dict):
+                    item["album"].setdefault("videoCover", None)
+                track = session.parse_track(item)
+            except Exception:
+                track = type("Track", (), {
+                    "id": item.get("id"),
+                    "title": item.get("title", ""),
+                    "artist": type("Artist", (), {"name": item.get("artists", [{}])[0].get("name", "")})(),
+                })()
+
+            track.item_uuid = item_uuid
+            all_tracks.append(track)
+
+        cursor = page_data.get("cursor")
+        if not cursor:
+            break
+
+    return all_tracks
+
+def remove_tracks_from_playlist(session, playlist_id, track_ids_or_uuids, chunk_size=50, max_retries=3, retry_delay=1):
+    """
+    Removes items from a playlist using Tidal's native v2 API (PUT /v2/playlists/{id}/items/remove).
+    If track IDs are provided instead of item UUIDs, resolves them via get_playlist_tracks.
+    Chunks item UUIDs and implements retry logic for transient errors.
+    """
+    if not track_ids_or_uuids:
+        return True
+
+    uuids_to_remove = []
+    track_ids_to_resolve = set()
+
+    for item in track_ids_or_uuids:
+        item_str = str(item)
+        if "-" in item_str and len(item_str) == 36:
+            uuids_to_remove.append(item_str)
+        else:
+            track_ids_to_resolve.add(item_str)
+
+    if track_ids_to_resolve:
+        for attempt in range(max_retries + 1):
+            tracks = get_playlist_tracks(session, playlist_id)
+            if tracks:
+                for t in tracks:
+                    if str(t.id) in track_ids_to_resolve or t.id in track_ids_to_resolve:
+                        item_uuid = getattr(t, "item_uuid", None)
+                        if item_uuid and item_uuid not in uuids_to_remove:
+                            uuids_to_remove.append(item_uuid)
+                if uuids_to_remove:
+                    break
+            if attempt < max_retries:
+                time.sleep(0.3)
+
+    if not uuids_to_remove:
+        return True
+
+    for i in range(0, len(uuids_to_remove), chunk_size):
+        chunk = uuids_to_remove[i:i + chunk_size]
+        params = {"itemUuids": ",".join(chunk)}
+        current_delay = retry_delay
+
+        for attempt in range(max_retries + 1):
+            try:
+                session.request.request(
+                    "PUT",
+                    f"playlists/{playlist_id}/items/remove",
+                    params=params,
+                    base_url=session.config.api_v2_location,
+                )
+                break
+            except Exception as e:
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+                is_transient = True
+                if status_code is not None and status_code < 500 and status_code != 429:
+                    is_transient = False
+
+                if is_transient and attempt < max_retries:
+                    logging.warning(
+                        f"Transient error removing tracks from playlist {playlist_id} via v2 API (attempt {attempt + 1}/{max_retries + 1}): {e}. Retrying in {current_delay}s..."
+                    )
+                    time.sleep(current_delay)
+                    current_delay *= 2
+                    continue
+                logging.error(f"Failed to remove tracks from playlist {playlist_id} via v2 API after {attempt + 1} attempts: {e}")
+                raise
+
+    return True
 
 def sync_playlist_tracks(session, playlist_id, to_add_ids, to_remove_ids):
     """
-    Adds and removes tracks from an existing playlist.
+    Adds and removes tracks from an existing playlist using Tidal's native v2 API.
     """
     try:
-        playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
         if to_remove_ids:
-            for i in range(0, len(to_remove_ids), 50):
-                try:
-                    playlist.delete_by_id([str(x) for x in to_remove_ids[i:i+50]])
-                except HTTPError as e:
-                    if getattr(e, 'response', None) is not None and e.response.status_code == 412:
-                        logging.info(f"Tidal API returned 412 (concurrent modification). Waiting 1s and retrying deletion...")
-                        time.sleep(1)
-                        playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
-                        playlist.delete_by_id([str(x) for x in to_remove_ids[i:i+50]])
-                    else:
-                        raise
+            remove_tracks_from_playlist(session, playlist_id, to_remove_ids)
         if to_add_ids:
-            for i in range(0, len(to_add_ids), 50):
-                try:
-                    playlist.add([str(x) for x in to_add_ids[i:i+50]])
-                except HTTPError as e:
-                    if getattr(e, 'response', None) is not None and e.response.status_code == 412:
-                        logging.info(f"Tidal API returned 412 (concurrent modification). Waiting 1s and retrying addition...")
-                        time.sleep(1)
-                        playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
-                        playlist.add([str(x) for x in to_add_ids[i:i+50]])
-                    else:
-                        raise
+            add_tracks_to_playlist(session, playlist_id, to_add_ids)
         return True
     except Exception as e:
-        logging.error(f"Failed to sync playlist {playlist_id}: {e}")
+        logging.error(f"Failed to sync playlist {playlist_id} via v2 API: {e}")
         return False
 
-def delete_playlist(session, playlist_id):
+def delete_playlist(session, playlist_id, max_retries=3, retry_delay=1):
     """
-    Deletes or removes a playlist from Tidal.
+    Deletes or removes a playlist from Tidal using the native v2 collection API
+    (PUT /v2/my-collection/playlists/folders/remove?trns=trn:playlist:{id}).
+    Falls back to legacy playlist.delete() if v2 removal fails.
     """
+    trn = f"trn:playlist:{playlist_id}"
+    params = {"trns": trn}
+    delay = retry_delay
+
+    api_v2 = getattr(getattr(session, "config", None), "api_v2_location", None)
+    if isinstance(api_v2, str) and api_v2.startswith("http") and hasattr(session, "request"):
+        for attempt in range(max_retries + 1):
+            try:
+                session.request.request(
+                    "PUT",
+                    "my-collection/playlists/folders/remove",
+                    params=params,
+                    base_url=session.config.api_v2_location,
+                )
+                return True
+            except Exception as e:
+                is_404 = False
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+                if status_code == 404 or isinstance(e, ObjectNotFound):
+                    is_404 = True
+
+                if is_404:
+                    return True
+
+                if attempt < max_retries:
+                    logging.warning(
+                        f"Transient error deleting playlist {playlist_id} via v2 API (attempt {attempt + 1}/{max_retries + 1}): {e}. Retrying in {delay}s..."
+                    )
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+
+                logging.warning(f"Could not delete playlist {playlist_id} via v2 API ({e}), falling back to legacy delete...")
+                break
+
     try:
         playlist = tidalapi.playlist.UserPlaylist(session, playlist_id)
-        # Attempt to delete, handling cases where it might not exist or the ID is malformed
         playlist.delete()
-    except Exception as e:
-        # Avoid crashing the sync process if deletion fails (e.g. 404 Not Found)
-        logging.warning(f"Could not delete playlist {playlist_id}: {e}")
+        return True
+    except Exception as e_fallback:
+        logging.warning(f"Could not delete playlist {playlist_id}: {e_fallback}")
+        return False
 
 def create_playlist_in_folder(session, name, description, folder_id, track_ids):
     """
@@ -464,13 +666,12 @@ def create_playlist_in_folder(session, name, description, folder_id, track_ids):
         pass
 
     target_folder = folder_id
+    playlist = None
     
     for attempt in range(max_retries + 1):
         try:
             playlist = session.user.create_playlist(unique_name, description, parent_id=target_folder)
-            if track_ids:
-                playlist.add(track_ids)
-            return playlist
+            break
             
         except (HTTPError, ObjectNotFound) as e:
             is_404 = False
@@ -496,10 +697,77 @@ def create_playlist_in_folder(session, name, description, folder_id, track_ids):
                 continue
             raise
 
-def add_tracks_to_playlist(playlist, tracks):
-    if not tracks:
-        return
-    playlist.add([t.id for t in tracks])
+    if track_ids and playlist:
+        try:
+            add_tracks_to_playlist(session, playlist.id, track_ids)
+        except Exception as e:
+            logging.warning(f"Failed to add tracks via v2 API ({e}), falling back to playlist.add()...")
+            playlist.add(track_ids)
+
+    return playlist
+
+def add_tracks_to_playlist(session_or_playlist, playlist_id_or_tracks, track_ids=None, chunk_size=50, max_retries=3, retry_delay=1):
+    """
+    Adds tracks to a playlist using Tidal's native v2 API (PUT /v2/playlists/{id}/items/add).
+    This avoids cross-version replication lag between v2 folder creation and legacy v1 track endpoints.
+    Chunks track IDs and implements retry logic for transient errors.
+    Supports both signatures:
+      - add_tracks_to_playlist(session, playlist_id, track_ids)
+      - add_tracks_to_playlist(playlist, tracks)
+    """
+    if track_ids is None:
+        playlist = session_or_playlist
+        tracks = playlist_id_or_tracks
+        if not tracks:
+            return True
+        session = getattr(playlist, "session", None)
+        p_id = getattr(playlist, "id", None)
+        ids = [getattr(t, "id", str(t)) for t in tracks]
+        if session and p_id:
+            return add_tracks_to_playlist(session, p_id, ids, chunk_size=chunk_size, max_retries=max_retries, retry_delay=retry_delay)
+        if hasattr(playlist, "add"):
+            playlist.add(ids)
+            return True
+        return False
+
+    session = session_or_playlist
+    playlist_id = playlist_id_or_tracks
+    if not track_ids:
+        return True
+
+    str_track_ids = [str(t) for t in track_ids]
+
+    for i in range(0, len(str_track_ids), chunk_size):
+        chunk = str_track_ids[i:i + chunk_size]
+        params = {"itemIds": ",".join(chunk)}
+        current_delay = retry_delay
+
+        for attempt in range(max_retries + 1):
+            try:
+                session.request.request(
+                    "PUT",
+                    f"playlists/{playlist_id}/items/add",
+                    params=params,
+                    base_url=session.config.api_v2_location,
+                )
+                break
+            except Exception as e:
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+                is_transient = True
+                if status_code is not None and status_code < 500 and status_code != 429:
+                    is_transient = False
+
+                if is_transient and attempt < max_retries:
+                    logging.warning(
+                        f"Transient error adding tracks to playlist {playlist_id} via v2 API (attempt {attempt + 1}/{max_retries + 1}): {e}. Retrying in {current_delay}s..."
+                    )
+                    time.sleep(current_delay)
+                    current_delay *= 2
+                    continue
+                logging.error(f"Failed to add tracks to playlist {playlist_id} via v2 API after {attempt + 1} attempts: {e}")
+                raise
+
+    return True
 
 def get_track_by_isrc(session, isrc):
     """

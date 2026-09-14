@@ -3,28 +3,34 @@ from unittest.mock import MagicMock, patch
 from src.services.tidal_service import sync_playlist_tracks
 
 class TestSyncPlaylistTracks(unittest.TestCase):
-    @patch('src.services.tidal_service.tidalapi.playlist.UserPlaylist')
-    def test_sync_playlist_tracks_success(self, mock_playlist_cls):
-        mock_playlist = MagicMock()
-        mock_playlist_cls.return_value = mock_playlist
+    @patch('src.services.tidal_service.add_tracks_to_playlist')
+    @patch('src.services.tidal_service.remove_tracks_from_playlist')
+    def test_sync_playlist_tracks_success(self, mock_remove, mock_add):
         session = MagicMock()
         
         result = sync_playlist_tracks(session, "pl_123", ["track1"], ["track2"])
         self.assertTrue(result)
-        mock_playlist.delete_by_id.assert_called_once_with(["track2"])
-        mock_playlist.add.assert_called_once_with(["track1"])
+        mock_remove.assert_called_once_with(session, "pl_123", ["track2"])
+        mock_add.assert_called_once_with(session, "pl_123", ["track1"])
 
-    @patch('src.services.tidal_service.tidalapi.playlist.UserPlaylist')
-    def test_sync_playlist_tracks_failure(self, mock_playlist_cls):
-        mock_playlist = MagicMock()
-        mock_playlist_cls.return_value = mock_playlist
+    @patch('src.services.tidal_service.add_tracks_to_playlist')
+    @patch('src.services.tidal_service.remove_tracks_from_playlist')
+    def test_sync_playlist_tracks_failure(self, mock_remove, mock_add):
         session = MagicMock()
-        
-        # Simulate network error
-        mock_playlist.add.side_effect = Exception("404 Not Found")
+        mock_add.side_effect = Exception("API error")
         
         result = sync_playlist_tracks(session, "pl_123", ["track1"], [])
         self.assertFalse(result)
+
+    @patch('src.services.tidal_service.add_tracks_to_playlist')
+    @patch('src.services.tidal_service.remove_tracks_from_playlist')
+    def test_sync_playlist_tracks_only_remove(self, mock_remove, mock_add):
+        session = MagicMock()
+        
+        result = sync_playlist_tracks(session, "pl_123", [], ["track2"])
+        self.assertTrue(result)
+        mock_remove.assert_called_once_with(session, "pl_123", ["track2"])
+        mock_add.assert_not_called()
 
 if __name__ == '__main__':
     unittest.main()
