@@ -156,7 +156,7 @@ uv run python -m src.cli.main radio \
 
 Reads your entire Tidal library, uses Gemini to classify each track by genre, and creates or syncs one playlist per genre inside a dedicated folder. This mode helps you organize your entire library automatically.
 
-**First Run & Syncing** — organize your library into a folder named "Genres" (the default folder name) with the default minimum genre size (10 tracks):
+**First Run & Syncing** — organize your library into a folder named "Genres" (the default folder name) with the default minimum genre size (5 tracks):
 
 ```bash
 uv run python -m src.cli.main organize
@@ -168,18 +168,50 @@ You can also use the supported alias:
 uv run python -m src.cli.main genre-organizer
 ```
 
-**Custom Folder, Threshold & Database Path** — organize into a specific folder, group genres with fewer than 10 tracks into an "Others" playlist, and specify a custom SQLite database cache file:
+**Backfilling Sub-Genres** — if you previously organized your library with single-genre tags, use `--refresh-genres` to query Gemini for primary and sub-genres:
+
+```bash
+uv run python -m src.cli.main organize --refresh-genres
+```
+
+**Custom Folder, Threshold & Database Path** — organize into a specific folder, set a custom threshold (e.g. 10 tracks, overriding the default of 5), and specify a custom SQLite database cache file:
 
 ```bash
 uv run python -m src.cli.main organize --folder "My Music Styles" --min-genre-size 10 --db-path "data/genre_cache.db"
 ```
 
-Expected outcome: A folder is created (or reused), containing playlists for each genre identified in your library that meets the minimum track threshold. Tracks with highly niche genres (falling below the threshold) are consolidated into an "Others" playlist. Tracks with ambiguous or unidentifiable genres are placed into an "Unknown" playlist.
+**Clean-Slate Folder Wipe & Re-Sync** — delete all existing playlists inside the destination folder and build fresh playlists:
+
+```bash
+uv run python -m src.cli.main organize --wipe-folder
+# or using the short alias:
+uv run python -m src.cli.main organize --wipe
+```
+
+**Empty Folder & Exit (Wipe-Only)** — delete all playlists inside the target folder and terminate immediately without scanning tracks or querying Gemini:
+
+```bash
+uv run python -m src.cli.main organize --wipe-only
+```
+
+**Non-Interactive Automation** — bypass interactive confirmation prompts when running in scripts, cron jobs, or CI/CD:
+
+```bash
+uv run python -m src.cli.main organize --wipe-folder --yes
+# or using short flag:
+uv run python -m src.cli.main organize --wipe -y
+```
+
+Expected outcome: A folder is created (or reused), containing playlists for each genre identified in your library. Each track is categorized into its specific primary genre AND up to 3 sub-genres (e.g. *Foals - "Tron"* appears in *Math Rock*, *Dance-Punk*, and *Post-Punk Revival*). Genres and sub-genres with at least 5 tracks (or configured `--min-genre-size`) receive dedicated standalone playlists. Primary genres falling below `--min-genre-size` are consolidated into an "Others" playlist, while sparse sub-genres below `--min-genre-size` are suppressed from standalone playlist creation to prevent library clutter. Tracks with ambiguous or unidentifiable genres are placed into an "Unknown" playlist. When sync completes, a summary is printed with a direct link to view the folder on Tidal.
 
 **`organize` notes:**
+- **Clean-Slate Folder Wiping:** Because Tidal prevents deleting non-empty playlist folders, `--wipe-folder` and `--wipe-only` delete each individual playlist inside the target folder, preserving the folder container and its persistent URL while providing a clean slate.
+- **Interactive Confirmation:** Running `--wipe-folder` or `--wipe-only` in an interactive terminal prompts for confirmation (`Are you sure you want to delete all playlists in folder '...'? [y/N]`) unless `--yes` / `-y` is supplied or non-interactive execution is detected.
+- **Multi-Genre Organization:** Gemini identifies 1 primary genre and up to 3 specific sub-genres, strictly avoiding generic umbrella terms like "Rock" or "Pop" when specific styles apply. Tracks are added to both their primary and all qualifying sub-genre playlists.
+- **Minimum Genre Size & Sub-Genre Suppression:** The default minimum genre size is 5 tracks. Standalone playlists are created only for genres and sub-genres with at least 5 tracks (or the configured `--min-genre-size`). Primary genres with fewer tracks are consolidated into "Others", while sparse sub-genres with fewer tracks are suppressed from standalone playlist creation to prevent clutter.
 - Re-running the command syncs the existing playlists by adding new tracks and removing tracks that are no longer in your library, without creating duplicates.
 - **SQLite Caching:** Track genre classification results are cached locally in an SQLite database (default: `data/genre_cache.db`). On subsequent runs, cached classifications are reused with zero Gemini token cost, and token cost reduction percentages are reported in the CLI output.
-- The command groups genres with fewer tracks than `--min-genre-size` into an "Others" playlist to limit playlist sprawl. The default threshold is 10 (so genres with 9 or fewer tracks go to "Others").
+- **`--refresh-genres`:** Selectively re-queries Gemini only for tracks in your cache that lack sub-genres, preserving token efficiency while upgrading your library metadata.
 - Playlists are processed and synced in ascending track count order. This forces Tidal to list the largest playlists first when you sort the folder by "Updated date" descending in the Tidal client.
 - Obsolete genre playlists (whose tracks have been removed from your library or moved to another playlist) are automatically deleted from Tidal.
 - This command uses `GEMINI_API_KEY` and requires a stable connection capable of retrieving large libraries.
@@ -219,8 +251,12 @@ These parameters apply identically to `organize` and its alias `genre-organizer`
 | Option | Description | Default | Required |
 | --- | --- | --- | --- |
 | `--folder` | Tidal folder name for the genre playlists. | `Genres` | No |
-| `--min-genre-size` | Min tracks for a genre playlist; else grouped into 'Others'. | `10` | No |
+| `--min-genre-size` | Minimum track count required for a genre playlist. Primary genres < min-genre-size go to 'Others'; smaller sub-genres are suppressed. | `5` | No |
 | `--db-path` | Path to the SQLite database cache file. | `data/genre_cache.db` | No |
+| `--refresh-genres` | Re-classify cached tracks that lack sub-genres to backfill multi-genre data. | `False` | No |
+| `--wipe-folder`, `--wipe` | Delete all existing playlists inside the target folder before synchronizing new playlists. | `False` | No |
+| `--wipe-only` | Delete all existing playlists inside the target folder and terminate immediately. | `False` | No |
+| `--yes`, `-y` | Skip interactive confirmation prompt when wiping playlists. | `False` | No |
 
 ## Troubleshooting
 
