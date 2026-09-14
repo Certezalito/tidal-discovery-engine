@@ -10,6 +10,7 @@ from src.services.tidal_service import (
     build_favorites_snapshot,
     filter_out_favorites,
     FavoritesRetrievalError,
+    get_playlists_in_folder,
 )
 from requests.exceptions import HTTPError
 
@@ -370,6 +371,57 @@ class TestTidalServiceExclusion(unittest.TestCase):
         self.assertEqual(excluded, 1)
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0].title, "Track B")
+
+
+class TestTidalServiceGetPlaylistsInFolder(unittest.TestCase):
+    def setUp(self):
+        self.mock_session = MagicMock()
+        self.mock_session.config.api_v2_location = "https://api.tidal.com/v2"
+
+    @patch("src.services.tidal_service.time.sleep")
+    def test_get_playlists_in_folder_retries_transient_504(self, mock_sleep):
+        mock_response_504 = MagicMock()
+        mock_response_504.status_code = 504
+        error_504 = HTTPError("504 Server Error: Gateway Time-out", response=mock_response_504)
+
+        good_response = MagicMock()
+        good_response.json.return_value = {
+            "items": [{"data": {"title": "Rock", "id": "pl-1"}}],
+            "cursor": None,
+        }
+
+        self.mock_session.request.request.side_effect = [error_504, good_response]
+        self.mock_session.request.map_json.side_effect = lambda d, parse: [MagicMock(name=x["title"]) for x in d["items"]]
+
+        result = get_playlists_in_folder(self.mock_session, "folder-123", max_retries=3, retry_delay=1)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(self.mock_session.request.request.call_count, 2)
+        mock_sleep.assert_called_once_with(1)
+
+    @patch("src.services.tidal_service.time.sleep")
+    def test_get_playlists_in_folder_fails_closed_after_retries_exhausted(self, mock_sleep):
+        mock_response_504 = MagicMock()
+        mock_response_504.status_code = 504
+        error_504 = HTTPError("504 Server Error: Gateway Time-out", response=mock_response_504)
+
+        self.mock_session.request.request.side_effect = error_504
+
+        with self.assertRaises(HTTPError):
+            get_playlists_in_folder(self.mock_session, "folder-123", max_retries=2, retry_delay=1)
+
+        self.assertEqual(self.mock_session.request.request.call_count, 3)
+
+    def test_get_playlists_in_folder_returns_empty_on_404(self):
+        mock_response_404 = MagicMock()
+        mock_response_404.status_code = 404
+        error_404 = HTTPError("404 Client Error: Not Found", response=mock_response_404)
+
+        self.mock_session.request.request.side_effect = error_404
+
+        result = get_playlists_in_folder(self.mock_session, "missing-folder")
+        self.assertEqual(result, [])
+
 
 if __name__ == '__main__':
     unittest.main()

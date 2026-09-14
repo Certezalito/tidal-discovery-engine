@@ -280,6 +280,44 @@ class TestGeminiService(unittest.TestCase):
         accuracy = correct_count / len(sample_tracks)
         self.assertGreaterEqual(accuracy, 0.90)
 
+    @patch("src.services.gemini_service._read_dotenv_values", return_value={})
+    @patch("src.services.gemini_service.genai.Client")
+    def test_classify_tracks_genres_multi_tier_sub_genres(self, mock_client_class, mock_dotenv):
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+
+        mock_response = self._FakeResponse(
+            parsed=[
+                gemini_service.GenreClassificationResult(
+                    artist="Foals",
+                    title="Tron",
+                    isrc="GBAHT0900329",
+                    primary_genre="Math Rock",
+                    sub_genres=["Dance-Punk", "Post-Punk Revival", "Art Punk"],
+                ),
+            ]
+        )
+        mock_client.models.generate_content.return_value = mock_response
+
+        tracks = [{"artist": "Foals", "title": "Tron", "isrc": "GBAHT0900329"}]
+        results = gemini_service.classify_tracks_genres("test-key", tracks)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["primary_genre"], "Math Rock")
+        self.assertEqual(results[0]["genre"], "Math Rock")
+        self.assertEqual(results[0]["sub_genres"], ["Dance-Punk", "Post-Punk Revival", "Art Punk"])
+
+    def test_genre_classification_result_model(self):
+        item = gemini_service.GenreClassificationResult(
+            artist="Foals",
+            title="Tron",
+            primary_genre="Math Rock",
+            sub_genres=["Dance-Punk", "Post-Punk Revival"],
+        )
+        dump = item.model_dump()
+        self.assertEqual(dump["primary_genre"], "Math Rock")
+        self.assertEqual(dump["sub_genres"], ["Dance-Punk", "Post-Punk Revival"])
+
 
 if __name__ == "__main__":
     unittest.main()

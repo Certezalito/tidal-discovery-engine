@@ -6,7 +6,7 @@ import time
 import re
 import tidalapi
 from tidalapi.exceptions import ObjectNotFound
-from requests.exceptions import HTTPError
+from requests.exceptions import HTTPError, RequestException
 
 import click
 import datetime
@@ -308,51 +308,77 @@ def get_or_create_folder(session, folder_name):
         except Exception:
             raise
 
-def get_playlists_in_folder(session, folder_id):
+def get_playlists_in_folder(session, folder_id, max_retries=3, retry_delay=1):
     """
     Returns a list of playlists existing in the specified folder, handling pagination.
+    Implements retry logic with exponential backoff for transient HTTP errors (5xx, 429)
+    and network timeouts. Fails closed by raising exceptions if retries are exhausted.
+    Returns an empty list if the folder is not found (404 / ObjectNotFound).
     """
-    try:
-        folder = tidalapi.playlist.Folder(session, folder_id)
-        all_items = []
-        cursor = None
-        
-        while True:
-            params = {
-                "folderId": folder_id,
-                "limit": 50,
-                "order": "NAME",
-                "includeOnly": "PLAYLIST",
-            }
-            if cursor:
-                params["cursor"] = cursor
-                
-            endpoint = "my-collection/playlists/folders"
-            json_obj = session.request.request(
-                "GET",
-                endpoint,
-                base_url=session.config.api_v2_location,
-                params=params,
-            ).json()
+    all_items = []
+    cursor = None
+    
+    while True:
+        params = {
+            "folderId": folder_id,
+            "limit": 50,
+            "order": "NAME",
+            "includeOnly": "PLAYLIST",
+        }
+        if cursor:
+            params["cursor"] = cursor
             
-            if json_obj.get("items"):
-                # Format to match what tidalapi expects
-                for item in json_obj["items"]:
+        endpoint = "my-collection/playlists/folders"
+        json_obj = None
+        current_delay = retry_delay
+
+        for attempt in range(max_retries + 1):
+            try:
+                response = session.request.request(
+                    "GET",
+                    endpoint,
+                    base_url=session.config.api_v2_location,
+                    params=params,
+                )
+                json_obj = response.json()
+                break
+            except ObjectNotFound:
+                return []
+            except (HTTPError, RequestException, Exception) as exc:
+                status_code = getattr(getattr(exc, "response", None), "status_code", None)
+                if status_code == 404:
+                    return []
+
+                is_transient = True
+                if status_code is not None and status_code < 500 and status_code != 429:
+                    is_transient = False
+
+                if is_transient and attempt < max_retries:
+                    logging.warning(
+                        f"Transient error reading items in folder {folder_id} (attempt {attempt + 1}/{max_retries + 1}): {exc}. Retrying in {current_delay}s..."
+                    )
+                    time.sleep(current_delay)
+                    current_delay *= 2
+                    continue
+                logging.error(f"Failed to read items in folder {folder_id} after {attempt + 1} attempts: {exc}")
+                raise
+
+        if isinstance(json_obj, dict) and json_obj.get("items"):
+            # Format to match what tidalapi expects
+            for item in json_obj["items"]:
+                if isinstance(item, dict) and "data" in item:
                     if "title" in item["data"] and "name" not in item["data"]:
                         item["data"]["name"] = item["data"]["title"]
-                
-                playlists = {"items": [item["data"] for item in json_obj.get("items")]}
-                items = session.request.map_json(playlists, parse=session.parse_playlist)
-                all_items.extend(items)
-                
-            cursor = json_obj.get("cursor")
-            if not cursor:
-                break
-                
-        return all_items
-    except Exception as e:
-        logging.warning(f"Could not read items in folder {folder_id}: {e}")
-        return []
+            
+            playlists = {"items": [item["data"] for item in json_obj.get("items") if isinstance(item, dict) and "data" in item]}
+            items = session.request.map_json(playlists, parse=session.parse_playlist)
+            all_items.extend(items)
+            
+        cursor = json_obj.get("cursor") if isinstance(json_obj, dict) else None
+        if not cursor or not isinstance(cursor, str):
+            break
+            
+    return all_items
 
 def get_playlist_tracks(session, playlist_id):
     """

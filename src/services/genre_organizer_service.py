@@ -11,8 +11,11 @@ class GenreRunSummary(BaseModel):
     playlists_updated: int = 0
     playlists_deleted: int = 0
     duplicate_playlists_deleted: int = 0
+    playlists_wiped: int = 0
     tracks_added: int = 0
     tracks_removed: int = 0
+    folder_id: Optional[str] = None
+    folder_url: Optional[str] = None
 
 def _get_tracks_batch(tracks, batch_size=100):
     for i in range(0, len(tracks), batch_size):
@@ -46,8 +49,11 @@ def run_genre_organizer_sync(
     session,
     folder_name: str,
     api_key: Optional[str] = None,
-    min_genre_size: int = 10,
+    min_genre_size: int = 5,
     db_path: Optional[str] = None,
+    refresh_genres: bool = False,
+    wipe_folder: bool = False,
+    wipe_only: bool = False,
 ) -> GenreRunSummary:
     """
     Orchestrates the full genre organizer sync workflow using SQLite caching.
@@ -71,6 +77,33 @@ def run_genre_organizer_sync(
     api_key = api_key or os.environ.get("GEMINI_API_KEY")
     summary = GenreRunSummary()
     cache_service = GenreCacheService(db_path=db_path) if db_path else GenreCacheService()
+
+    logging.info(f"Resolving destination folder '{folder_name}'...")
+    folder = get_or_create_folder(session, folder_name)
+    if folder:
+        folder_id = getattr(folder, "id", None)
+        if folder_id:
+            summary.folder_id = str(folder_id)
+            summary.folder_url = f"https://tidal.com/browse/folder/{folder_id}"
+        elif getattr(folder, "listen_url", None):
+            summary.folder_url = str(folder.listen_url)
+
+    existing_playlists = get_playlists_in_folder(session, folder.id) if (folder and getattr(folder, "id", None)) else []
+
+    if wipe_folder or wipe_only:
+        logging.info(f"Wiping existing playlists in folder '{folder_name}'...")
+        for p in existing_playlists:
+            p_id = getattr(p, "id", None)
+            if p_id:
+                p_name = getattr(p, "name", "")
+                logging.info(f"Deleting playlist '{p_name}' (id: {p_id})")
+                delete_playlist(session, p_id)
+                summary.playlists_wiped += 1
+        existing_playlists = []
+        logging.info(f"Wiped {summary.playlists_wiped} existing playlists in folder '{folder_name}'.")
+
+    if wipe_only:
+        return summary
     
     logging.info(f"[{GENRE_PLAYLIST_SCAN_STARTED}] Fetching full Tidal library...")
     favorite_tracks, pages = fetch_all_favorite_tracks(session)
@@ -92,21 +125,27 @@ def run_genre_organizer_sync(
     track_keys = [get_track_identity_key(t) for t in tracks_to_process]
     
     # Query SQLite database cache
-    cached_genres, uncached_or_unknown_keys = cache_service.get_cached_genres(track_keys)
+    cached_genres, uncached_or_unknown_keys = cache_service.get_cached_genres(track_keys, refresh_genres=refresh_genres)
     summary.cache_hits = len(cached_genres)
     summary.cache_misses = len(uncached_or_unknown_keys)
     
     import re
     genre_groups_norm = {}
     norm_to_canonical = {}
+    track_primary_norm = {}
     unknown_track_ids = []
     
-    def add_to_genre_groups(raw_genre, track_id):
+    def add_to_genre_groups(raw_genre: str, track_id: str, is_sub: bool = False):
         raw_genre = raw_genre.strip()
         norm_key = re.sub(r'[^a-z0-9]', '', raw_genre.lower())
+        if not norm_key:
+            return
+        if not is_sub:
+            track_primary_norm[track_id] = norm_key
         if norm_key not in genre_groups_norm:
             genre_groups_norm[norm_key] = []
-        genre_groups_norm[norm_key].append(track_id)
+        if track_id not in genre_groups_norm[norm_key]:
+            genre_groups_norm[norm_key].append(track_id)
         
         if norm_key not in norm_to_canonical:
             norm_to_canonical[norm_key] = raw_genre
@@ -123,9 +162,20 @@ def run_genre_organizer_sync(
     for t in tracks_to_process:
         key = get_track_identity_key(t)
         if key in cached_genres:
-            genre = cached_genres[key]
-            summary.classified_tracks += 1
-            add_to_genre_groups(genre, t.id)
+            genre_data = cached_genres[key]
+            if isinstance(genre_data, dict):
+                primary_genre = genre_data.get("primary_genre")
+                sub_genres = genre_data.get("sub_genres", [])
+            else:
+                primary_genre = str(genre_data)
+                sub_genres = []
+
+            if primary_genre and primary_genre != "Unknown":
+                summary.classified_tracks += 1
+                add_to_genre_groups(primary_genre, t.id, is_sub=False)
+                for sub in sub_genres:
+                    if sub and str(sub).strip():
+                        add_to_genre_groups(str(sub).strip(), t.id, is_sub=True)
         elif key in uncached_keys_set:
             uncached_tracks.append(t)
             
@@ -144,12 +194,13 @@ def run_genre_organizer_sync(
             results = classify_tracks_genres(api_key, batch_inputs)
             
             for track, result in zip(batch, results):
-                genre = result.get("genre")
+                primary_genre = result.get("primary_genre") or result.get("genre")
+                sub_genres = result.get("sub_genres") or []
                 key = get_track_identity_key(track)
                 artist_name = getattr(track.artist, "name", "") if getattr(track, "artist", None) else ""
                 title_str = getattr(track, "title", "")
                 
-                if not genre or genre.strip().lower() in ("unknown", ""):
+                if not primary_genre or primary_genre.strip().lower() in ("unknown", ""):
                     unknown_track_ids.append(track.id)
                     summary.unknown_tracks += 1
                     records_to_save.append({
@@ -157,46 +208,64 @@ def run_genre_organizer_sync(
                         "artist": artist_name,
                         "title": title_str,
                         "primary_genre": "Unknown",
+                        "sub_genres": [],
                         "status": "UNKNOWN",
                     })
                 else:
                     summary.classified_tracks += 1
-                    genre_key = genre.strip()
-                    add_to_genre_groups(genre_key, track.id)
+                    genre_key = primary_genre.strip()
+                    add_to_genre_groups(genre_key, track.id, is_sub=False)
+                    clean_subs = []
+                    for sub in sub_genres:
+                        if sub and str(sub).strip():
+                            s_clean = str(sub).strip()
+                            clean_subs.append(s_clean)
+                            add_to_genre_groups(s_clean, track.id, is_sub=True)
+
                     records_to_save.append({
                         "track_id": key,
                         "artist": artist_name,
                         "title": title_str,
                         "primary_genre": genre_key,
+                        "sub_genres": clean_subs,
                         "status": "CLASSIFIED",
                     })
 
         cache_service.save_track_genres(records_to_save)
 
-    genre_groups = {}
+    # Thresholding: Standalone playlists are created ONLY for genres and sub-genres with >= min_genre_size tracks.
+    # Tracks whose primary genre has < min_genre_size tracks are routed to "Others".
+    # Sub-genres with < min_genre_size tracks are suppressed from standalone playlist creation.
+    final_genre_groups = {}
     for norm_key, track_ids in genre_groups_norm.items():
         canonical_name = norm_to_canonical[norm_key]
-        genre_groups[canonical_name] = track_ids
+        if len(track_ids) >= min_genre_size:
+            final_genre_groups[canonical_name] = track_ids
 
-    # Thresholding: route genres < min_genre_size into "Others"
     others_track_ids = []
-    final_genre_groups = {}
-    for genre_name, track_ids in genre_groups.items():
-        if len(track_ids) < min_genre_size:
-            others_track_ids.extend(track_ids)
-        else:
-            final_genre_groups[genre_name] = track_ids
-            
+    for tid, primary_norm in track_primary_norm.items():
+        if primary_norm and len(genre_groups_norm.get(primary_norm, [])) < min_genre_size:
+            others_track_ids.append(tid)
+
     if others_track_ids:
-        final_genre_groups["Others"] = others_track_ids
+        deduped_others = []
+        seen_others = set()
+        for tid in others_track_ids:
+            if tid not in seen_others:
+                seen_others.add(tid)
+                deduped_others.append(tid)
+        final_genre_groups["Others"] = deduped_others
 
     if unknown_track_ids:
-        final_genre_groups["Unknown"] = unknown_track_ids
+        deduped_unknown = []
+        seen_unknown = set()
+        for tid in unknown_track_ids:
+            if tid not in seen_unknown:
+                seen_unknown.add(tid)
+                deduped_unknown.append(tid)
+        final_genre_groups["Unknown"] = deduped_unknown
 
-    logging.info(f"Classification complete. Resolving folder '{folder_name}'...")
-    folder = get_or_create_folder(session, folder_name)
-    
-    existing_playlists = get_playlists_in_folder(session, folder.id)
+    logging.info(f"Classification complete. Processing playlists in folder '{folder_name}'...")
     
     grouped_playlists = {}
     for p in existing_playlists:

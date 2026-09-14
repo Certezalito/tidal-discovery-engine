@@ -1,6 +1,6 @@
 import os
 import logging
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
 from dotenv import dotenv_values
@@ -31,7 +31,10 @@ class GenreClassificationResult(BaseModel):
     isrc: str | None = None
     title: str | None = None
     artist: str | None = None
-    genre: str | None = None
+    primary_genre: str | None = None
+    sub_genres: list[str] = Field(default_factory=list, description="Up to 3 specific sub-genres, excluding broad umbrella categories")
+    genre: str | None = None  # Legacy alias for backward compatibility
+
 
 
 def _extract_error_code(error):
@@ -407,11 +410,15 @@ def classify_tracks_genres(api_key: str, tracks: list) -> list[dict]:
     seeds_text = "\n".join(descriptions)
 
     full_prompt = (
-        "I will provide a list of songs. "
-        "For each song, identify the most appropriate musical genres. "
-        "Select exactly ONE best-match genre for each song. "
-        "Return the output strictly in the requested JSON structure. "
-        "Do not invent genres, use established standard genres.\n\n"
+        "I will provide a list of songs.\n"
+        "For each song:\n"
+        "1. Identify the 'primary_genre': exactly ONE specific, recognized musical genre that best captures the core identity of the track.\n"
+        "   - Do NOT use overly broad, generic umbrella terms like 'Rock', 'Pop', 'Alternative', 'Music', or 'Electronic' if a more descriptive primary genre applies (e.g., use 'Indie Rock', 'Synthpop', 'Math Rock', 'Deep House').\n"
+        "2. Identify 'sub_genres': up to 3 specific sub-genres or micro-genres that accurately characterize the track's distinctive elements (e.g., 'Dance-Punk', 'Post-Punk Revival', 'Art Punk').\n"
+        "   - Strictly EXCLUDE broad umbrella categories from sub_genres.\n"
+        "   - If no distinctive sub-genres apply, return an empty list.\n\n"
+        "Return the output strictly in the requested JSON structure.\n"
+        "Do not invent genres; use established standard music genres.\n\n"
         f"SONGS:\n{seeds_text}"
     )
 
@@ -447,8 +454,22 @@ def classify_tracks_genres(api_key: str, tracks: list) -> list[dict]:
                         "artist": getattr(item, "artist", None),
                         "title": getattr(item, "title", None),
                         "isrc": getattr(item, "isrc", None),
-                        "genres": getattr(item, "genres", []),
+                        "primary_genre": getattr(item, "primary_genre", getattr(item, "genre", None)),
+                        "sub_genres": getattr(item, "sub_genres", []),
                     }
+
+                primary_genre = row.get("primary_genre") or row.get("genre")
+                if primary_genre:
+                    primary_genre = str(primary_genre).strip()
+                sub_genres_raw = row.get("sub_genres") or []
+                if not isinstance(sub_genres_raw, list):
+                    sub_genres_raw = [str(sub_genres_raw)] if sub_genres_raw else []
+                # Clean and cap sub-genres to at most 3
+                sub_genres = [str(s).strip() for s in sub_genres_raw if s and str(s).strip()][:3]
+
+                row["primary_genre"] = primary_genre
+                row["genre"] = primary_genre  # Legacy alias
+                row["sub_genres"] = sub_genres
                 results.append(row)
                 
             return results

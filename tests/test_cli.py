@@ -283,7 +283,7 @@ class TestCLI(unittest.TestCase):
         )
         
         self.assertEqual(result.exit_code, 0)
-        mock_run_sync.assert_called_with(mock_get_session.return_value, 'My Custom Genres', min_genre_size=10, db_path='data/genre_cache.db')
+        mock_run_sync.assert_called_with(mock_get_session.return_value, 'My Custom Genres', min_genre_size=5, db_path='data/genre_cache.db', refresh_genres=False, wipe_folder=False, wipe_only=False)
         
         # CLI argument absent (defaults to "Genres")
         result2 = self.runner.invoke(
@@ -293,7 +293,7 @@ class TestCLI(unittest.TestCase):
         )
         
         self.assertEqual(result2.exit_code, 0)
-        mock_run_sync.assert_called_with(mock_get_session.return_value, 'Genres', min_genre_size=10, db_path='data/genre_cache.db')
+        mock_run_sync.assert_called_with(mock_get_session.return_value, 'Genres', min_genre_size=5, db_path='data/genre_cache.db', refresh_genres=False, wipe_folder=False, wipe_only=False)
 
     @patch('src.cli.main.setup_logging')
     @patch('src.cli.main.run_genre_organizer_sync')
@@ -364,7 +364,7 @@ class TestCLI(unittest.TestCase):
         mock_summary.tracks_removed = 0
         mock_run_sync.return_value = mock_summary
 
-        # Default is 10
+        # Default is 5
         result = self.runner.invoke(
             cli,
             ['organize'],
@@ -372,7 +372,7 @@ class TestCLI(unittest.TestCase):
         )
         self.assertEqual(result.exit_code, 0)
         args, kwargs = mock_run_sync.call_args
-        self.assertEqual(kwargs.get('min_genre_size', 10), 10)
+        self.assertEqual(kwargs.get('min_genre_size', 5), 5)
         
         # Override to 15
         result2 = self.runner.invoke(

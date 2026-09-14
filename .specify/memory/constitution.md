@@ -1,8 +1,8 @@
 <!--
 Sync Impact Report:
-- **Version Change**: 1.8.1 → 1.9.0
-- **Modified Principles**: None
-- **Added Principles / Sections**: Principle IX (CLI Ergonomics & Friction Reduction); CLI Ergonomics & Sensible Defaults quality gate under Technical Standards & Workflow.
+- **Version Change**: 1.10.0 → 1.11.0
+- **Modified Principles**: Principle X (Critical Dependency Currency & Capability Discovery) — amended to mandate updating the required version file (`pyproject.toml`) when new functionality in critical client libraries (e.g., `tidalapi`) is identified and adopted.
+- **Added Principles / Sections**: None (amended Principle X, Technical Standards & Workflow Quality Gate, and Compliance Review Expectations)
 - **Removed Sections**: None
 - **Templates requiring updates**: None
 - **Follow-up TODOs**: None
@@ -94,6 +94,25 @@ Rationale: CLI tools are most effective and delightful when common tasks can be 
 spontaneously with minimal friction. Overly verbose or strictly rigid argument requirements
 discourage casual daily usage and increase user errors.
 
+### X. Critical Dependency Currency & Capability Discovery
+Before initiating technical planning, architectural design, or feature implementation that
+relies on external client libraries (specifically critical client libraries such as `tidalapi`),
+contributors and automated agents MUST inspect the library's latest releases, changelogs,
+and repository updates for newly available functionality, improved endpoints, or resolved
+limitations. When upstream library releases provide native methods or cleaner abstractions that
+support the desired feature, the project MUST evaluate upgrading the dependency and adopting the
+native capability rather than implementing custom workarounds, low-level HTTP calls, or brittle
+private-attribute overrides. If new or required functionality is identified and adopted from a
+critical client library, the required dependency version specification file (e.g., `pyproject.toml`
+and lockfile) MUST be updated immediately to enforce the minimum required library version.
+
+Rationale: External service APIs and client libraries evolve continuously. Implementing bespoke
+logic without first checking for existing or newly added upstream capabilities increases maintenance
+burden, risks divergence from API standards, and wastes development effort on problems already
+solved upstream. Enforcing explicit version constraints in the project's dependency definition
+prevents deployment of stale environments, eliminates runtime missing-attribute failures, and ensures
+deterministic behavior across development, testing, and production runs.
+
 ## Mission
 To create a personalized music discovery tool that seamlessly integrates with a
 user's Tidal library, leverages Last.fm's recommendation engine, and automates
@@ -113,6 +132,12 @@ the creation of new playlists to enrich the user's listening experience.
 - Code MUST adhere to modular design principles to support the Extensibility
   principle.
 - All dependencies MUST be managed via `uv`.
+- **Critical Dependency Currency & Capability Check**: Before planning or implementing
+  features that interact with external service client libraries (most notably `tidalapi`),
+  contributors MUST verify whether an updated release exists and check upstream documentation/changelogs
+  for newly added methods or bug fixes that can fulfill the requirements natively. If new
+  functionality is discovered and adopted, the required version specification file (`pyproject.toml`)
+  MUST be updated to reflect the minimum version requirement before or alongside implementation.
 - **Caching & Persistence**: Commands and services operating on library-wide metadata,
   track genres, or external AI/API queries MUST implement structured persistent local
   caching (e.g., SQLite/database) with explicit mechanisms to re-evaluate missing or
@@ -165,7 +190,10 @@ Compliance Review Expectations:
 - Reviewers MUST reject feature changes that lack documentation updates, skip
   required targeted validation, fail understandability checks, introduce awkward or
   excessively verbose CLI requirements when concise ergonomics and sensible defaults
-  could be provided, invent unknown facts without authoritative verification, or
-  prompt/rely on AI-generated ISRC codes.
+  could be provided, invent unknown facts without authoritative verification,
+  overlook available upstream functionality in critical client libraries like `tidalapi`
+  when planning new integrations, fail to update required dependency version files
+  (`pyproject.toml`) when upstream capabilities are adopted, or prompt/rely on AI-generated
+  ISRC codes.
 
-**Version**: 1.9.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-09-03
+**Version**: 1.11.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-09-14

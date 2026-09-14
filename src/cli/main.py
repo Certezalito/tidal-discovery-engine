@@ -655,18 +655,32 @@ def recommend(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_na
         log_cli_error("PLAYLIST_GENERATION_FAILED", "Unhandled error during playlist generation.", details=str(e))
         raise click.ClickException(str(e))
 
-def _execute_genre_organizer(folder: str, min_genre_size: int, db_path: str):
+def _execute_genre_organizer(
+    folder: str,
+    min_genre_size: int,
+    db_path: str,
+    refresh_genres: bool = False,
+    wipe_folder: bool = False,
+    wipe_only: bool = False,
+    yes: bool = False,
+):
     """
     Shared execution handler for genre organizer synchronization.
     """
     setup_logging()
-    logging.info(f"Starting genre organizer sync in folder '{folder}' with min genre size {min_genre_size}...")
+    logging.info(f"Starting genre organizer sync in folder '{folder}' with min genre size {min_genre_size} (refresh_genres={refresh_genres}, wipe_folder={wipe_folder}, wipe_only={wipe_only})...")
 
     try:
+        if (wipe_folder or wipe_only) and not yes:
+            import sys
+            is_interactive = sys.stdin.isatty() or "click.testing" in getattr(sys.stdin.__class__, "__module__", "")
+            if is_interactive:
+                click.confirm(f"Are you sure you want to delete all playlists in folder '{folder}'?", abort=True)
+
         tidal_session = tidal_service.get_session()
         
-        # Verify Gemini is configured
-        if "GEMINI_API_KEY" not in os.environ:
+        # Verify Gemini is configured if not wipe_only
+        if not wipe_only and "GEMINI_API_KEY" not in os.environ:
             raise click.ClickException("genre organizer requires GEMINI_API_KEY environment variable.")
             
         summary = run_genre_organizer_sync(
@@ -674,66 +688,109 @@ def _execute_genre_organizer(folder: str, min_genre_size: int, db_path: str):
             folder,
             min_genre_size=min_genre_size,
             db_path=db_path,
+            refresh_genres=refresh_genres,
+            wipe_folder=wipe_folder,
+            wipe_only=wipe_only,
         )
         
         logging.info("Genre organizer sync complete.")
-        logging.info(f"Tracks scanned: {summary.library_tracks_scanned}")
-        logging.info(f"Cache hits: {summary.cache_hits}")
-        logging.info(f"Cache misses: {summary.cache_misses}")
-        logging.info(f"Classified tracks: {summary.classified_tracks}")
-        logging.info(f"Unknown tracks: {summary.unknown_tracks}")
-        logging.info(f"Playlists created: {summary.playlists_created}")
-        logging.info(f"Playlists Updated:      {summary.playlists_updated}")
-        logging.info(f"Playlists Deleted:      {summary.playlists_deleted}")
-        if summary.duplicate_playlists_deleted > 0:
-            logging.info(f"  (including {summary.duplicate_playlists_deleted} duplicates removed)")
-        if summary.cache_hits + summary.cache_misses > 0:
-            savings_pct = (summary.cache_hits / (summary.cache_hits + summary.cache_misses)) * 100
-            logging.info(f"Token Cost Reduction:   {savings_pct:.1f}%")
-        logging.info(f"Tracks Added:           {summary.tracks_added}")
-        logging.info(f"Tracks Removed:         {summary.tracks_removed}")
+        playlists_wiped = getattr(summary, "playlists_wiped", 0)
+        if isinstance(playlists_wiped, int) and playlists_wiped > 0:
+            logging.info(f"Playlists Wiped:        {playlists_wiped}")
+        if not wipe_only:
+            logging.info(f"Tracks scanned: {summary.library_tracks_scanned}")
+            logging.info(f"Cache hits: {summary.cache_hits}")
+            logging.info(f"Cache misses: {summary.cache_misses}")
+            logging.info(f"Classified tracks: {summary.classified_tracks}")
+            logging.info(f"Unknown tracks: {summary.unknown_tracks}")
+            logging.info(f"Playlists created: {summary.playlists_created}")
+            logging.info(f"Playlists Updated:      {summary.playlists_updated}")
+            logging.info(f"Playlists Deleted:      {summary.playlists_deleted}")
+            if summary.duplicate_playlists_deleted > 0:
+                logging.info(f"  (including {summary.duplicate_playlists_deleted} duplicates removed)")
+            if summary.cache_hits + summary.cache_misses > 0:
+                savings_pct = (summary.cache_hits / (summary.cache_hits + summary.cache_misses)) * 100
+                logging.info(f"Token Cost Reduction:   {savings_pct:.1f}%")
+            logging.info(f"Tracks Added:           {summary.tracks_added}")
+            logging.info(f"Tracks Removed:         {summary.tracks_removed}")
+        folder_url = summary.folder_url if isinstance(getattr(summary, "folder_url", None), str) else None
+        if folder_url:
+            logging.info(f"Folder available at:    {folder_url}")
 
         click.echo("\n--- Genre Organizer Sync Summary ---")
-        click.echo(f"Library Tracks Scanned: {summary.library_tracks_scanned}")
-        click.echo(f"Database Cache Hits:    {summary.cache_hits}")
-        click.echo(f"Gemini API Queries:     {summary.cache_misses}")
-        click.echo(f"Playlists Created:      {summary.playlists_created}")
-        click.echo(f"Playlists Updated:      {summary.playlists_updated}")
-        click.echo(f"Playlists Deleted:      {summary.playlists_deleted}")
-        if summary.duplicate_playlists_deleted > 0:
-            click.echo(f"  (including {summary.duplicate_playlists_deleted} duplicates removed)")
-        if summary.cache_hits + summary.cache_misses > 0:
-            savings_pct = (summary.cache_hits / (summary.cache_hits + summary.cache_misses)) * 100
-            click.echo(f"Token Cost Reduction:   {savings_pct:.1f}%")
-        click.echo(f"Tracks Added:           {summary.tracks_added}")
-        click.echo(f"Tracks Removed:         {summary.tracks_removed}")
+        if isinstance(playlists_wiped, int) and playlists_wiped > 0:
+            click.echo(f"Playlists Wiped:        {playlists_wiped}")
+        if not wipe_only:
+            click.echo(f"Library Tracks Scanned: {summary.library_tracks_scanned}")
+            click.echo(f"Database Cache Hits:    {summary.cache_hits}")
+            click.echo(f"Gemini API Queries:     {summary.cache_misses}")
+            click.echo(f"Playlists Created:      {summary.playlists_created}")
+            click.echo(f"Playlists Updated:      {summary.playlists_updated}")
+            click.echo(f"Playlists Deleted:      {summary.playlists_deleted}")
+            if summary.duplicate_playlists_deleted > 0:
+                click.echo(f"  (including {summary.duplicate_playlists_deleted} duplicates removed)")
+            if summary.cache_hits + summary.cache_misses > 0:
+                savings_pct = (summary.cache_hits / (summary.cache_hits + summary.cache_misses)) * 100
+                click.echo(f"Token Cost Reduction:   {savings_pct:.1f}%")
+            click.echo(f"Tracks Added:           {summary.tracks_added}")
+            click.echo(f"Tracks Removed:         {summary.tracks_removed}")
+        if folder_url:
+            click.echo(f"Folder URL:             {folder_url}")
         click.echo("------------------------------------")
+        if folder_url:
+            click.echo(f"\nView folder '{folder}' here: {folder_url}")
 
+    except (click.ClickException, click.Abort):
+        raise
     except Exception as e:
         logging.exception(f"Failed to run genre organizer: {e}")
         raise click.ClickException(str(e))
 
 @cli.command("organize")
 @click.option("--folder", default="Genres", help="Destination folder name for the genre playlists. Overrides configuration.")
-@click.option("--min-genre-size", default=10, type=int, help="Minimum number of tracks required for a genre playlist. Genres with fewer tracks are grouped into an 'Others' playlist.")
+@click.option("--min-genre-size", default=5, type=int, help="Minimum number of tracks required for a genre playlist. Primary genres with fewer tracks are grouped into 'Others'; smaller sub-genres are suppressed.")
 @click.option("--db-path", default="data/genre_cache.db", type=click.Path(), help="Path to the SQLite database cache file.")
-def organize_cmd(folder, min_genre_size, db_path):
+@click.option("--refresh-genres", is_flag=True, default=False, help="Force Gemini to re-classify tracks that lack sub-genres in the local cache.")
+@click.option("--wipe-folder", "--wipe", is_flag=True, default=False, help="Delete all existing playlists inside the target folder before synchronizing new playlists.")
+@click.option("--wipe-only", is_flag=True, default=False, help="Delete all existing playlists inside the target folder and terminate immediately without synchronizing new playlists.")
+@click.option("--yes", "-y", is_flag=True, default=False, help="Skip interactive confirmation prompt when wiping playlists.")
+def organize_cmd(folder, min_genre_size, db_path, refresh_genres, wipe_folder, wipe_only, yes):
     """
     Reads the full Tidal library, categorizes tracks by genre via Gemini using a local database cache,
     and syncs genre playlists into the specified folder.
     """
-    _execute_genre_organizer(folder, min_genre_size, db_path)
+    _execute_genre_organizer(
+        folder,
+        min_genre_size,
+        db_path,
+        refresh_genres=refresh_genres,
+        wipe_folder=wipe_folder,
+        wipe_only=wipe_only,
+        yes=yes,
+    )
 
 @cli.command("genre-organizer")
 @click.option("--folder", default="Genres", help="Destination folder name for the genre playlists. Overrides configuration.")
-@click.option("--min-genre-size", default=10, type=int, help="Minimum number of tracks required for a genre playlist. Genres with fewer tracks are grouped into an 'Others' playlist.")
+@click.option("--min-genre-size", default=5, type=int, help="Minimum number of tracks required for a genre playlist. Primary genres with fewer tracks are grouped into 'Others'; smaller sub-genres are suppressed.")
 @click.option("--db-path", default="data/genre_cache.db", type=click.Path(), help="Path to the SQLite database cache file.")
-def genre_organizer_cmd(folder, min_genre_size, db_path):
+@click.option("--refresh-genres", is_flag=True, default=False, help="Force Gemini to re-classify tracks that lack sub-genres in the local cache.")
+@click.option("--wipe-folder", "--wipe", is_flag=True, default=False, help="Delete all existing playlists inside the target folder before synchronizing new playlists.")
+@click.option("--wipe-only", is_flag=True, default=False, help="Delete all existing playlists inside the target folder and terminate immediately without synchronizing new playlists.")
+@click.option("--yes", "-y", is_flag=True, default=False, help="Skip interactive confirmation prompt when wiping playlists.")
+def genre_organizer_cmd(folder, min_genre_size, db_path, refresh_genres, wipe_folder, wipe_only, yes):
     """
     Alias for 'organize'. Reads the full Tidal library, categorizes tracks by genre via Gemini using a local database cache,
     and syncs genre playlists into the specified folder.
     """
-    _execute_genre_organizer(folder, min_genre_size, db_path)
+    _execute_genre_organizer(
+        folder,
+        min_genre_size,
+        db_path,
+        refresh_genres=refresh_genres,
+        wipe_folder=wipe_folder,
+        wipe_only=wipe_only,
+        yes=yes,
+    )
 
 @cli.command(
     "genre-playlist",
