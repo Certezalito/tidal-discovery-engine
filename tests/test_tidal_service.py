@@ -12,6 +12,8 @@ from src.services.tidal_service import (
     FavoritesRetrievalError,
     get_playlists_in_folder,
     add_tracks_to_playlist,
+    get_playlist_tracks,
+    remove_tracks_from_playlist,
 )
 from requests.exceptions import HTTPError
 
@@ -501,6 +503,154 @@ class TestAddTracksToPlaylist(unittest.TestCase):
         playlist = create_playlist_in_folder(self.mock_session, "FallBack Playlist", "Desc", "folder-1", ["101", "102"])
         self.assertEqual(playlist, mock_new_playlist)
         mock_new_playlist.add.assert_called_once_with(["101", "102"])
+
+
+class TestGetPlaylistTracks(unittest.TestCase):
+    def setUp(self):
+        self.mock_session = MagicMock()
+        self.mock_session.config.api_v2_location = "https://api.tidal.com/v2/"
+        self.mock_session.locale = "en_US"
+        self.mock_session.parse_track.side_effect = lambda item: MagicMock(
+            id=item["id"],
+            title=item.get("title", "Song"),
+            artist=MagicMock(name=item.get("artists", [{}])[0].get("name", "Artist")),
+        )
+
+    def test_get_playlist_tracks_success(self):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "content": [
+                {"id": "uuid-1", "item": {"id": 101, "title": "Track 1"}},
+                {"id": "uuid-2", "item": {"id": 102, "title": "Track 2"}},
+            ],
+            "cursor": None,
+        }
+        self.mock_session.request.request.return_value = mock_response
+
+        tracks = get_playlist_tracks(self.mock_session, "pl-1")
+        self.assertEqual(len(tracks), 2)
+        self.assertEqual(tracks[0].id, 101)
+        self.assertEqual(tracks[0].item_uuid, "uuid-1")
+        self.assertEqual(tracks[1].id, 102)
+        self.assertEqual(tracks[1].item_uuid, "uuid-2")
+        self.mock_session.request.request.assert_called_once_with(
+            "GET",
+            "playlists/pl-1/items",
+            params={"locale": "en_US", "limit": 100},
+            base_url="https://api.tidal.com/v2/",
+        )
+
+    def test_get_playlist_tracks_pagination(self):
+        page1 = MagicMock()
+        page1.json.return_value = {
+            "content": [{"id": "uuid-1", "item": {"id": 101}}],
+            "cursor": "cursor-token-123",
+        }
+        page2 = MagicMock()
+        page2.json.return_value = {
+            "content": [{"id": "uuid-2", "item": {"id": 102}}],
+            "cursor": None,
+        }
+        self.mock_session.request.request.side_effect = [page1, page2]
+
+        tracks = get_playlist_tracks(self.mock_session, "pl-1")
+        self.assertEqual(len(tracks), 2)
+        self.assertEqual(self.mock_session.request.request.call_count, 2)
+        second_call = self.mock_session.request.request.call_args_list[1]
+        self.assertEqual(second_call.kwargs["params"]["cursor"], "cursor-token-123")
+
+    @patch("src.services.tidal_service.time.sleep")
+    def test_get_playlist_tracks_retry_on_504(self, mock_sleep):
+        mock_resp_504 = MagicMock()
+        mock_resp_504.status_code = 504
+        error_504 = HTTPError("504 Server Error", response=mock_resp_504)
+
+        good_page = MagicMock()
+        good_page.json.return_value = {
+            "content": [{"id": "uuid-1", "item": {"id": 101}}],
+            "cursor": None,
+        }
+        self.mock_session.request.request.side_effect = [error_504, good_page]
+
+        tracks = get_playlist_tracks(self.mock_session, "pl-1", max_retries=2, retry_delay=1)
+        self.assertEqual(len(tracks), 1)
+        self.assertEqual(self.mock_session.request.request.call_count, 2)
+        mock_sleep.assert_called_once_with(1)
+
+    def test_get_playlist_tracks_404_returns_none(self):
+        mock_resp_404 = MagicMock()
+        mock_resp_404.status_code = 404
+        error_404 = HTTPError("404 Not Found", response=mock_resp_404)
+        self.mock_session.request.request.side_effect = error_404
+
+        result = get_playlist_tracks(self.mock_session, "missing-pl")
+        self.assertIsNone(result)
+
+    def test_get_playlist_tracks_empty_playlist(self):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"content": [], "cursor": None}
+        self.mock_session.request.request.return_value = mock_response
+
+        tracks = get_playlist_tracks(self.mock_session, "empty-pl")
+        self.assertEqual(tracks, [])
+
+
+class TestRemoveTracksFromPlaylist(unittest.TestCase):
+    def setUp(self):
+        self.mock_session = MagicMock()
+        self.mock_session.config.api_v2_location = "https://api.tidal.com/v2/"
+
+    def test_remove_tracks_with_item_uuids(self):
+        uuids = ["393177c9-3ef0-4943-8226-e6ab64230851", "72800665-fec4-4825-a58c-c0a196c02cc7"]
+        result = remove_tracks_from_playlist(self.mock_session, "pl-1", uuids)
+        self.assertTrue(result)
+        self.mock_session.request.request.assert_called_once_with(
+            "PUT",
+            "playlists/pl-1/items/remove",
+            params={"itemUuids": ",".join(uuids)},
+            base_url="https://api.tidal.com/v2/",
+        )
+
+    @patch("src.services.tidal_service.get_playlist_tracks")
+    def test_remove_tracks_with_track_ids_resolves_uuids(self, mock_get_tracks):
+        mock_t1 = MagicMock(id=101, item_uuid="uuid-101")
+        mock_t2 = MagicMock(id=102, item_uuid="uuid-102")
+        mock_t3 = MagicMock(id=103, item_uuid="uuid-103")
+        mock_get_tracks.return_value = [mock_t1, mock_t2, mock_t3]
+
+        result = remove_tracks_from_playlist(self.mock_session, "pl-1", [101, 103])
+        self.assertTrue(result)
+        self.mock_session.request.request.assert_called_once_with(
+            "PUT",
+            "playlists/pl-1/items/remove",
+            params={"itemUuids": "uuid-101,uuid-103"},
+            base_url="https://api.tidal.com/v2/",
+        )
+
+    def test_remove_tracks_empty_list(self):
+        result = remove_tracks_from_playlist(self.mock_session, "pl-1", [])
+        self.assertTrue(result)
+        self.mock_session.request.request.assert_not_called()
+
+    def test_remove_tracks_chunking(self):
+        uuids = [f"00000000-0000-0000-0000-{i:012d}" for i in range(75)]
+        result = remove_tracks_from_playlist(self.mock_session, "pl-1", uuids, chunk_size=50)
+        self.assertTrue(result)
+        self.assertEqual(self.mock_session.request.request.call_count, 2)
+
+    @patch("src.services.tidal_service.time.sleep")
+    def test_remove_tracks_retry_on_504(self, mock_sleep):
+        mock_resp_504 = MagicMock()
+        mock_resp_504.status_code = 504
+        error_504 = HTTPError("504 Server Error", response=mock_resp_504)
+
+        uuids = ["393177c9-3ef0-4943-8226-e6ab64230851"]
+        self.mock_session.request.request.side_effect = [error_504, MagicMock()]
+
+        result = remove_tracks_from_playlist(self.mock_session, "pl-1", uuids, max_retries=2, retry_delay=1)
+        self.assertTrue(result)
+        self.assertEqual(self.mock_session.request.request.call_count, 2)
+        mock_sleep.assert_called_once_with(1)
 
 
 if __name__ == '__main__':
