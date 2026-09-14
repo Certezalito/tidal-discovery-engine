@@ -464,13 +464,12 @@ def create_playlist_in_folder(session, name, description, folder_id, track_ids):
         pass
 
     target_folder = folder_id
+    playlist = None
     
     for attempt in range(max_retries + 1):
         try:
             playlist = session.user.create_playlist(unique_name, description, parent_id=target_folder)
-            if track_ids:
-                playlist.add(track_ids)
-            return playlist
+            break
             
         except (HTTPError, ObjectNotFound) as e:
             is_404 = False
@@ -496,10 +495,77 @@ def create_playlist_in_folder(session, name, description, folder_id, track_ids):
                 continue
             raise
 
-def add_tracks_to_playlist(playlist, tracks):
-    if not tracks:
-        return
-    playlist.add([t.id for t in tracks])
+    if track_ids and playlist:
+        try:
+            add_tracks_to_playlist(session, playlist.id, track_ids)
+        except Exception as e:
+            logging.warning(f"Failed to add tracks via v2 API ({e}), falling back to playlist.add()...")
+            playlist.add(track_ids)
+
+    return playlist
+
+def add_tracks_to_playlist(session_or_playlist, playlist_id_or_tracks, track_ids=None, chunk_size=50, max_retries=3, retry_delay=1):
+    """
+    Adds tracks to a playlist using Tidal's native v2 API (PUT /v2/playlists/{id}/items/add).
+    This avoids cross-version replication lag between v2 folder creation and legacy v1 track endpoints.
+    Chunks track IDs and implements retry logic for transient errors.
+    Supports both signatures:
+      - add_tracks_to_playlist(session, playlist_id, track_ids)
+      - add_tracks_to_playlist(playlist, tracks)
+    """
+    if track_ids is None:
+        playlist = session_or_playlist
+        tracks = playlist_id_or_tracks
+        if not tracks:
+            return True
+        session = getattr(playlist, "session", None)
+        p_id = getattr(playlist, "id", None)
+        ids = [getattr(t, "id", str(t)) for t in tracks]
+        if session and p_id:
+            return add_tracks_to_playlist(session, p_id, ids, chunk_size=chunk_size, max_retries=max_retries, retry_delay=retry_delay)
+        if hasattr(playlist, "add"):
+            playlist.add(ids)
+            return True
+        return False
+
+    session = session_or_playlist
+    playlist_id = playlist_id_or_tracks
+    if not track_ids:
+        return True
+
+    str_track_ids = [str(t) for t in track_ids]
+
+    for i in range(0, len(str_track_ids), chunk_size):
+        chunk = str_track_ids[i:i + chunk_size]
+        params = {"itemIds": ",".join(chunk)}
+        current_delay = retry_delay
+
+        for attempt in range(max_retries + 1):
+            try:
+                session.request.request(
+                    "PUT",
+                    f"playlists/{playlist_id}/items/add",
+                    params=params,
+                    base_url=session.config.api_v2_location,
+                )
+                break
+            except Exception as e:
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+                is_transient = True
+                if status_code is not None and status_code < 500 and status_code != 429:
+                    is_transient = False
+
+                if is_transient and attempt < max_retries:
+                    logging.warning(
+                        f"Transient error adding tracks to playlist {playlist_id} via v2 API (attempt {attempt + 1}/{max_retries + 1}): {e}. Retrying in {current_delay}s..."
+                    )
+                    time.sleep(current_delay)
+                    current_delay *= 2
+                    continue
+                logging.error(f"Failed to add tracks to playlist {playlist_id} via v2 API after {attempt + 1} attempts: {e}")
+                raise
+
+    return True
 
 def get_track_by_isrc(session, isrc):
     """

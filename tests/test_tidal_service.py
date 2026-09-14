@@ -11,6 +11,7 @@ from src.services.tidal_service import (
     filter_out_favorites,
     FavoritesRetrievalError,
     get_playlists_in_folder,
+    add_tracks_to_playlist,
 )
 from requests.exceptions import HTTPError
 
@@ -180,8 +181,13 @@ class TestTidalServiceFolders(unittest.TestCase):
         # Assert
         # Should create with original name
         self.mock_user.create_playlist.assert_called_with(playlist_name, "Desc", parent_id=folder_id)
-        # Should add tracks
-        mock_new_playlist.add.assert_called_with(track_ids)
+        # Should add tracks via v2 API
+        self.mock_session.request.request.assert_called_with(
+            "PUT",
+            f"playlists/{mock_new_playlist.id}/items/add",
+            params={"itemIds": "1,2"},
+            base_url=self.mock_session.config.api_v2_location,
+        )
         
     @patch('src.services.tidal_service.tidalapi.playlist.Folder')
     def test_create_playlist_in_folder_with_collision(self, params_mock_folder_class):
@@ -421,6 +427,80 @@ class TestTidalServiceGetPlaylistsInFolder(unittest.TestCase):
 
         result = get_playlists_in_folder(self.mock_session, "missing-folder")
         self.assertEqual(result, [])
+
+
+class TestAddTracksToPlaylist(unittest.TestCase):
+    def setUp(self):
+        self.mock_session = MagicMock()
+        self.mock_session.config.api_v2_location = "https://api.tidal.com/v2/"
+
+    def test_add_tracks_to_playlist_success(self):
+        result = add_tracks_to_playlist(self.mock_session, "playlist-1", ["101", "102"])
+        self.assertTrue(result)
+        self.mock_session.request.request.assert_called_once_with(
+            "PUT",
+            "playlists/playlist-1/items/add",
+            params={"itemIds": "101,102"},
+            base_url="https://api.tidal.com/v2/",
+        )
+
+    def test_add_tracks_to_playlist_empty_list(self):
+        result = add_tracks_to_playlist(self.mock_session, "playlist-1", [])
+        self.assertTrue(result)
+        self.mock_session.request.request.assert_not_called()
+
+    def test_add_tracks_to_playlist_chunking(self):
+        track_ids = [str(i) for i in range(75)]
+        result = add_tracks_to_playlist(self.mock_session, "playlist-1", track_ids, chunk_size=50)
+        self.assertTrue(result)
+        self.assertEqual(self.mock_session.request.request.call_count, 2)
+        
+        # Verify first chunk has 50 items
+        first_call = self.mock_session.request.request.call_args_list[0]
+        self.assertEqual(first_call.kwargs["params"]["itemIds"], ",".join(track_ids[:50]))
+
+        # Verify second chunk has 25 items
+        second_call = self.mock_session.request.request.call_args_list[1]
+        self.assertEqual(second_call.kwargs["params"]["itemIds"], ",".join(track_ids[50:]))
+
+    @patch("src.services.tidal_service.time.sleep")
+    def test_add_tracks_to_playlist_retry_on_504(self, mock_sleep):
+        mock_response_504 = MagicMock()
+        mock_response_504.status_code = 504
+        error_504 = HTTPError("504 Server Error", response=mock_response_504)
+        
+        self.mock_session.request.request.side_effect = [error_504, MagicMock()]
+        result = add_tracks_to_playlist(self.mock_session, "playlist-1", ["101"], max_retries=2, retry_delay=1)
+        self.assertTrue(result)
+        self.assertEqual(self.mock_session.request.request.call_count, 2)
+        mock_sleep.assert_called_once_with(1)
+
+    def test_add_tracks_to_playlist_raises_on_400_without_retry(self):
+        mock_response_400 = MagicMock()
+        mock_response_400.status_code = 400
+        error_400 = HTTPError("400 Bad Request", response=mock_response_400)
+        
+        self.mock_session.request.request.side_effect = error_400
+        with self.assertRaises(HTTPError):
+            add_tracks_to_playlist(self.mock_session, "playlist-1", ["101"], max_retries=2)
+        # Should not retry 4xx errors
+        self.assertEqual(self.mock_session.request.request.call_count, 1)
+
+    @patch('src.services.tidal_service.tidalapi.playlist.Folder')
+    def test_create_playlist_in_folder_v2_fallback_to_playlist_add(self, mock_folder_cls):
+        mock_folder = MagicMock()
+        mock_folder.items.return_value = []
+        mock_folder_cls.return_value = mock_folder
+
+        mock_new_playlist = MagicMock()
+        self.mock_session.user.create_playlist.return_value = mock_new_playlist
+        
+        # When v2 request fails, it should fall back to playlist.add
+        self.mock_session.request.request.side_effect = Exception("V2 failure")
+
+        playlist = create_playlist_in_folder(self.mock_session, "FallBack Playlist", "Desc", "folder-1", ["101", "102"])
+        self.assertEqual(playlist, mock_new_playlist)
+        mock_new_playlist.add.assert_called_once_with(["101", "102"])
 
 
 if __name__ == '__main__':
