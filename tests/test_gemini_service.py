@@ -215,6 +215,25 @@ class TestGeminiService(unittest.TestCase):
         self.assertEqual(mock_generate.call_args_list[0].args[1], "primary-model")
         self.assertEqual(mock_generate.call_args_list[1].args[1], "fallback-model")
 
+    def test_resolve_primary_model_defaults_to_gemini_flash_latest(self):
+        with patch.dict("os.environ", {}, clear=True):
+            model, source = gemini_service._resolve_primary_model({})
+            self.assertEqual(model, "gemini-flash-latest")
+            self.assertEqual(source, "default")
+
+    def test_resolve_primary_model_aliases(self):
+        for alias in ["latest", "LATEST", "auto", "Auto", "flash-latest"]:
+            with patch.dict("os.environ", {"GEMINI_MODEL": alias}, clear=True):
+                model, source = gemini_service._resolve_primary_model({})
+                self.assertEqual(model, "gemini-flash-latest")
+                self.assertEqual(source, "env")
+
+    def test_resolve_primary_model_explicit_model(self):
+        with patch.dict("os.environ", {"GEMINI_MODEL": "gemini-2.5-pro"}, clear=True):
+            model, source = gemini_service._resolve_primary_model({})
+            self.assertEqual(model, "gemini-2.5-pro")
+            self.assertEqual(source, "env")
+
     @patch("src.services.gemini_service._read_dotenv_values", return_value={})
     @patch("src.services.gemini_service.genai.Client")
     def test_classify_tracks_genres_parses_results(self, mock_client_class, mock_dotenv):

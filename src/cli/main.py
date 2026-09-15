@@ -385,7 +385,12 @@ def radio(artist, track, playlist_name, num_tracks, num_tracks_alias, gemini, sh
 @click.option("--num-tidal-tracks", default=10, help="The number of random favorite tracks to select from Tidal.")
 @click.option("--num-similar-tracks", default=5, type=int, help="The number of similar tracks to retrieve from Last.fm for each Tidal track.")
 @click.option("--shuffle", is_flag=True, help="Shuffle the similar tracks before adding them to the playlist.")
-@click.option("--playlist-name", required=True, help="The name for the new Tidal playlist. Use {date} for dynamic date.")
+@click.option(
+    "--playlist-name",
+    default="Discovery {date}",
+    show_default=True,
+    help="The name for the new Tidal playlist. Use {date} for dynamic date.",
+)
 @click.option("--folder", help="Optional folder name to organize the playlist.")
 @click.option(
     "--exclude-favorites",
@@ -406,6 +411,9 @@ def recommend(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_na
     if gemini:
         if "GEMINI_API_KEY" not in os.environ:
             raise click.ClickException("--gemini flag requires GEMINI_API_KEY environment variable.")
+
+    if not playlist_name:
+        playlist_name = "Discovery {date}"
 
     if "{date}" in playlist_name:
         run_date = datetime.date.today().strftime("%Y%m%d")
@@ -748,9 +756,14 @@ def _execute_genre_organizer(
 
 @cli.command("organize")
 @click.option("--folder", default="Genres", help="Destination folder name for the genre playlists. Overrides configuration.")
-@click.option("--min-genre-size", default=5, type=int, help="Minimum number of tracks required for a genre playlist. Primary genres with fewer tracks are grouped into 'Others'; smaller sub-genres are suppressed.")
+@click.option(
+    "--min-genre-size",
+    default=5,
+    type=int,
+    help="Minimum tracks needed to generate a playlist. Tracks from smaller primary genres go into 'Others'; sub-genres with fewer tracks are omitted from playlist creation.",
+)
 @click.option("--db-path", default="data/genre_cache.db", type=click.Path(), help="Path to the SQLite database cache file.")
-@click.option("--refresh-genres", is_flag=True, default=False, help="Force Gemini to re-classify tracks that lack sub-genres in the local cache.")
+@click.option("--refresh-genres", is_flag=True, default=False, help="Force Gemini to re-classify all tracks, ignoring local cache. Note: this parameter is token-expensive depending on library size.")
 @click.option("--wipe-folder", "--wipe", is_flag=True, default=False, help="Delete all existing playlists inside the target folder before synchronizing new playlists.")
 @click.option("--wipe-only", is_flag=True, default=False, help="Delete all existing playlists inside the target folder and terminate immediately without synchronizing new playlists.")
 @click.option("--yes", "-y", is_flag=True, default=False, help="Skip interactive confirmation prompt when wiping playlists.")
@@ -771,9 +784,14 @@ def organize_cmd(folder, min_genre_size, db_path, refresh_genres, wipe_folder, w
 
 @cli.command("genre-organizer")
 @click.option("--folder", default="Genres", help="Destination folder name for the genre playlists. Overrides configuration.")
-@click.option("--min-genre-size", default=5, type=int, help="Minimum number of tracks required for a genre playlist. Primary genres with fewer tracks are grouped into 'Others'; smaller sub-genres are suppressed.")
+@click.option(
+    "--min-genre-size",
+    default=5,
+    type=int,
+    help="Minimum tracks needed to generate a playlist. Tracks from smaller primary genres go into 'Others'; sub-genres with fewer tracks are omitted from playlist creation.",
+)
 @click.option("--db-path", default="data/genre_cache.db", type=click.Path(), help="Path to the SQLite database cache file.")
-@click.option("--refresh-genres", is_flag=True, default=False, help="Force Gemini to re-classify tracks that lack sub-genres in the local cache.")
+@click.option("--refresh-genres", is_flag=True, default=False, help="Force Gemini to re-classify all tracks, ignoring local cache. Note: this parameter is token-expensive depending on library size.")
 @click.option("--wipe-folder", "--wipe", is_flag=True, default=False, help="Delete all existing playlists inside the target folder before synchronizing new playlists.")
 @click.option("--wipe-only", is_flag=True, default=False, help="Delete all existing playlists inside the target folder and terminate immediately without synchronizing new playlists.")
 @click.option("--yes", "-y", is_flag=True, default=False, help="Skip interactive confirmation prompt when wiping playlists.")

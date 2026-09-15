@@ -144,8 +144,7 @@ def test_genre_cache_service_refresh_genres_flag(temp_db_path):
     assert "modern_track" in cached
     assert uncached == []
 
-    # With refresh_genres=True: legacy_track lacking sub_genres is marked uncached for backfill
+    # With refresh_genres=True: all tracks are marked uncached to force full re-classification
     cached, uncached = cache_service.get_cached_genres(["legacy_track", "modern_track"], refresh_genres=True)
-    assert "modern_track" in cached
-    assert "legacy_track" not in cached
-    assert uncached == ["legacy_track"]
+    assert cached == {}
+    assert set(uncached) == {"legacy_track", "modern_track"}

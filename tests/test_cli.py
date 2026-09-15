@@ -59,6 +59,45 @@ class TestCLI(unittest.TestCase):
         args, kwargs = mock_create_playlist.call_args
         self.assertEqual(kwargs['folder_id'], 'folder-123')
 
+    @patch('src.services.tidal_service.get_session')
+    @patch('src.cli.main.setup_logging')
+    @patch('src.services.tidal_service.create_playlist')
+    @patch('src.services.tidal_service.get_random_favorite_tracks')
+    @patch('src.services.lastfm_service.get_network')
+    @patch('src.services.lastfm_service.get_similar_tracks')
+    @patch('src.services.tidal_service.search_for_track')
+    def test_recommend_command_default_playlist_name(
+        self,
+        mock_search,
+        mock_similar,
+        mock_get_network,
+        mock_random,
+        mock_create_playlist,
+        mock_setup_logging,
+        mock_get_session,
+    ):
+        mock_get_session.return_value = MagicMock()
+        mock_get_network.return_value = MagicMock()
+
+        mock_track = MagicMock()
+        mock_track.name = "Track"
+        mock_track.artist.name = "Artist"
+        mock_random.return_value = [mock_track]
+
+        mock_sim_track = MagicMock()
+        mock_similar.return_value = [mock_sim_track]
+
+        mock_tidal_track = MagicMock()
+        mock_search.return_value = mock_tidal_track
+        mock_create_playlist.return_value = MagicMock(id="p1", name="Discovery")
+
+        result = self.runner.invoke(cli, ['recommend'])
+
+        self.assertEqual(result.exit_code, 0)
+        expected_name = f"Discovery {datetime.date.today().strftime('%Y%m%d')}"
+        args, _ = mock_create_playlist.call_args
+        self.assertEqual(args[1], expected_name)
+
     @patch('src.cli.main.setup_logging')
     def test_recommend_rejects_non_positive_num_similar_tracks(self, mock_setup_logging):
         result = self.runner.invoke(

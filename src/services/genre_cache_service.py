@@ -22,11 +22,14 @@ class GenreCacheService:
         - Dict[track_id, {"primary_genre": str, "sub_genres": list[str]}] for tracks with status 'CLASSIFIED'
         - List[track_id] for tracks uncached or with status 'UNKNOWN' (requiring Gemini lookup)
 
-        If refresh_genres is True, tracks that lack sub_genres are treated as uncached so that
-        sub-genres can be backfilled via Gemini.
+        If refresh_genres is True, all tracks are treated as uncached so that
+        all genres are refreshed via Gemini, ignoring existing cache.
         """
         if not track_ids:
             return {}, []
+
+        if refresh_genres:
+            return {}, list(track_ids)
 
         cached_classified: Dict[str, Dict[str, Any]] = {}
         uncached_or_unknown: set[str] = set(track_ids)
@@ -53,9 +56,6 @@ class GenreCacheService:
                         pass
 
                 if status == "CLASSIFIED" and genre and genre != "Unknown":
-                    if refresh_genres and not sub_genres:
-                        # Existing cached track lacks sub_genres; treat as uncached to backfill
-                        continue
 
                     cached_classified[t_id] = {
                         "primary_genre": genre,

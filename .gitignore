@@ -27,3 +27,8 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# Scratch workspace
+scratch/*
+!scratch/.gitkeep
+!scratch/README.md

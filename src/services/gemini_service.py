@@ -6,7 +6,7 @@ from google.genai import types
 from dotenv import dotenv_values
 
 
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
 _DEFAULT_WARNING_EMITTED = False
 RECOVERY_RETRY_LIMIT = 1
 
@@ -81,7 +81,13 @@ def _normalize_model_name(value):
         return None
 
     normalized = str(value).strip()
-    return normalized or None
+    if not normalized:
+        return None
+
+    if normalized.lower() in {"latest", "auto", "flash-latest"}:
+        return "gemini-flash-latest"
+
+    return normalized
 
 
 def _read_dotenv_values():
