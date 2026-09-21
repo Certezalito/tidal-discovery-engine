@@ -16,6 +16,8 @@ A command-line tool that generates Tidal playlists with recommended tracks using
     uv venv && uv pip install -e .
     ```
 
+    Installing in editable mode (`-e .`) automatically registers the `tde` (and full alias `tidal-discovery-engine`) CLI shortcut commands into your environment.
+
 3. Create a `.env` file in the project root with your API keys:
 
     ```
@@ -33,10 +35,12 @@ A command-line tool that generates Tidal playlists with recommended tracks using
 4. Run the script once interactively to authenticate with Tidal:
 
     ```bash
-    uv run python -m src.cli.main recommend
+    uv run tde recommend
     ```
 
     This creates a `tidal_session.json` file in the project root, which is reused for all future non-interactive runs.
+
+> **CLI Shortcut**: You can invoke commands with `uv run tde <command>`. If your virtual environment is activated (`source .venv/bin/activate`), you can simply run `tde <command>`. The descriptive alias `tidal-discovery-engine` is also available, and legacy direct execution (`uv run python -m src.cli.main`) remains fully supported.
 
 ## Commands
 
@@ -49,7 +53,7 @@ Uses Last.fm OR Gemini depending on your configuration (defaults to Last.fm):
 **Quick start** — generate a playlist based on your Tidal favorites using Last.fm recommendations:
 
 ```bash
-uv run python -m src.cli.main recommend
+uv run tde recommend
 ```
 
 #### Variations on `recommend` 
@@ -59,14 +63,14 @@ uv run python -m src.cli.main recommend
 To exclude tracks you already saved in Tidal favorites from the resulting playlist:
 
 ```bash
-uv run python -m src.cli.main recommend --playlist-name "TDE {date}" --exclude-favorites
+uv run tde recommend --playlist-name "TDE {date}" --exclude-favorites
 ```
 #### `--shuffle`
 
 Randomizes the selection of tracks by pulling a larger pool and picking from the pool.  Think of it as pulling "Deeper cuts." 
 
 ```bash
-uv run python -m src.cli.main recommend --shuffle --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}" --folder "Tidal Discovery Engine"
+uv run tde recommend --shuffle --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}" --folder "Tidal Discovery Engine"
 ```
 
 #### `--gemini` require Gemini API key in `.env` 
@@ -74,7 +78,7 @@ uv run python -m src.cli.main recommend --shuffle --num-tidal-tracks 5 --num-sim
 Uses Google Gemini AI instead of Last.fm to generate recommendations. 
 
 ```bash
-uv run python -m src.cli.main recommend --gemini --playlist-name "TDE Gemini Hits" --folder "Tidal Discovery Engine"
+uv run tde recommend --gemini --playlist-name "TDE Gemini Hits" --folder "Tidal Discovery Engine"
 ```
 
 
@@ -85,7 +89,7 @@ Generates a dedicated track radio playlist seeded with a specific song. The seed
 **Quick start** — generate a track radio playlist:
 
 ```bash
-uv run python -m src.cli.main radio --artist "Matt Darey" --track "Gamemaster" --playlist-name "Gamemaster Vibes {date}"
+uv run tde radio --artist "Matt Darey" --track "Gamemaster" --playlist-name "Gamemaster Vibes {date}"
 ```
 
 Expected outcome:
@@ -102,7 +106,7 @@ Expected outcome:
 Use Google Gemini AI instead of Last.fm for recommendations:
 
 ```bash
-uv run python -m src.cli.main radio --artist "Burial" --track "Archangel" --gemini
+uv run tde radio --artist "Burial" --track "Archangel" --gemini
 ```
 
 - **Graceful fallback**: If the configured Gemini model is unavailable, the command automatically falls back to Last.fm recommendations with a warning.
@@ -112,7 +116,7 @@ uv run python -m src.cli.main radio --artist "Burial" --track "Archangel" --gemi
 Deeper cuts are returned
 
 ```bash
-uv run python -m src.cli.main radio --artist "Burial" --track "Archangel" --gemini --shuffle
+uv run tde radio --artist "Burial" --track "Archangel" --gemini --shuffle
 ```
 
 
@@ -130,36 +134,36 @@ Reads your entire Tidal library, uses Gemini to classify each track by genre, an
 **First Run & Syncing** — organize your library into a folder named "Genres" (the default folder name) with the default minimum genre size (5 tracks, any genre without 5 tracks will be discard to prevent playlist sprawl):
 
 ```bash
-uv run python -m src.cli.main organize
+uv run tde organize
 ```
 
 
 **Custom Folder, Threshold & Database Path** — organize into a specific folder, set a custom threshold (e.g. 10 tracks, overriding the default of 5), and specify a custom SQLite database cache file:
 
 ```bash
-uv run python -m src.cli.main organize --folder "My Music Styles" --min-genre-size 10 --db-path "data/genre_cache.db"
+uv run tde organize --folder "My Music Styles" --min-genre-size 10 --db-path "data/genre_cache.db"
 ```
 
 **Clean-Slate Folder Wipe & Re-Sync** — delete all existing playlists inside the destination folder and build fresh playlists:
 
 ```bash
-uv run python -m src.cli.main organize --wipe-folder
+uv run tde organize --wipe-folder
 # or using the short alias:
-uv run python -m src.cli.main organize --wipe
+uv run tde organize --wipe
 ```
 
 **Empty Folder & Exit (Wipe-Only)** — delete all playlists inside the target folder and terminate immediately without scanning tracks or querying Gemini:
 
 ```bash
-uv run python -m src.cli.main organize --wipe-only
+uv run tde organize --wipe-only
 ```
 
 **Non-Interactive Automation** — bypass interactive confirmation prompts when running in scripts, cron jobs, or CI/CD:
 
 ```bash
-uv run python -m src.cli.main organize --wipe-folder --yes
+uv run tde organize --wipe-folder --yes
 # or using short flag:
-uv run python -m src.cli.main organize --wipe -y
+uv run tde organize --wipe -y
 ```
 
 Expected outcome: A folder is created (or reused), containing playlists for each genre identified in your library. Each track is categorized into its specific primary genre AND up to 3 sub-genres (e.g. *Foals - "Tron"* appears in *Math Rock*, *Dance-Punk*, and *Post-Punk Revival*). Genres and sub-genres with at least 5 tracks (or configured `--min-genre-size`) receive dedicated standalone playlists. Primary genres falling below `--min-genre-size` are consolidated into an "Others" playlist, while sparse sub-genres below `--min-genre-size` are suppressed from standalone playlist creation to prevent library clutter. Tracks with ambiguous or unidentifiable genres are placed into an "Unknown" playlist. When sync completes, a summary is printed with a direct link to view the folder on Tidal.
@@ -167,7 +171,7 @@ Expected outcome: A folder is created (or reused), containing playlists for each
 **`organize` notes:**
 **Force Re-Classification (`--refresh-genres`)** — bypass the local database cache and force Gemini to re-classify every track across your entire library. **Note:** This option is token-expensive depending on your library size:
 ```bash
-uv run python -m src.cli.main organize --refresh-genres
+uv run tde organize --refresh-genres
 ```
 - **Clean-Slate Folder Wiping:** Because Tidal prevents deleting non-empty playlist folders, `--wipe-folder` and `--wipe-only` delete each individual playlist inside the target folder, preserving the folder container and its persistent URL while providing a clean slate.
 - **Interactive Confirmation:** Running `--wipe-folder` or `--wipe-only` in an interactive terminal prompts for confirmation (`Are you sure you want to delete all playlists in folder '...'? [y/N]`) unless `--yes` / `-y` is supplied or non-interactive execution is detected.
@@ -246,7 +250,7 @@ These parameters apply identically to `organize` and its alias `genre-organizer`
 **Corrective action:** Provide both options together:
 
 ```bash
-uv run python -m src.cli.main radio --artist "Lost Tribe" --track "Gamemaster"
+uv run tde radio --artist "Lost Tribe" --track "Gamemaster"
 ```
 
 ### Authentication or Quota Failure
@@ -262,7 +266,7 @@ uv run python -m src.cli.main radio --artist "Lost Tribe" --track "Gamemaster"
 
     ```bash
     rm tidal_session.json
-    uv run python -m src.cli.main recommend
+    uv run tde recommend
     ```
 
 3. Retry the original command after resolving the credential or quota issue.
@@ -310,7 +314,7 @@ You can schedule the script to run periodically using `cron` on Unix-like system
 2. Add a schedule line. Replace `/path/to/tidal-discovery-engine` with the absolute path to your project folder (run `pwd` from your project directory to get it):
 
     ```bash
-    0 8 * * * cd /path/to/tidal-discovery-engine && /home/username/.local/bin/uv run python -m src.cli.main recommend --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}"
+    0 8 * * * cd /path/to/tidal-discovery-engine && /home/username/.local/bin/uv run tde recommend --num-tidal-tracks 5 --num-similar-tracks 10 --playlist-name "TDE {date}"
     ```
 
     This example runs the script every day at 8:00 AM.
@@ -323,7 +327,7 @@ You can schedule the script to run periodically using `cron` on Unix-like system
 2. Create a new task.
 3. Set a trigger for when you want the task to run.
 4. Set the action to "Start a program".
-5. Set the program/script to your Python executable inside the `.venv` folder (e.g., `C:\path\to\tidal-discovery-engine\.venv\Scripts\python.exe`).
+5. Set the program/script to your `tde` executable inside the `.venv` folder (e.g., `C:\path\to\tidal-discovery-engine\.venv\Scripts\tde.exe` or `python.exe`).
 6. Set the arguments to `recommend --playlist-name "Daily Discovery"`.
 7. Set the "Start in" directory to the root of the project (e.g., `C:\path\to\tidal-discovery-engine`).
 
@@ -336,8 +340,9 @@ tidal-discovery-engine/
 ├── docs/                       # Project documentation & bootstrap records
 │   └── prompt/                 # Initial development prompts
 ├── scratch/                    # Local scratchpad for experiments & spikes (gitignored)
-├── specs/                      # Spec Kit specifications & feature records (001–018)
+├── specs/                      # Spec Kit specifications & feature records
 ├── src/                        # Main application source code
+│   ├── __init__.py             # Package marker for clean distribution and imports
 │   ├── cli/                    # Click CLI commands and entry points (main.py)
 │   ├── lib/                    # Shared infrastructure (database helpers)
 │   └── services/               # Core business logic

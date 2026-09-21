@@ -1,7 +1,7 @@
 [project]
 name = "tidal-discovery-engine"
 version = "0.1.0"
-description = "Add your description here"
+description = "Curate and discover music playlists with Tidal, Last.fm, and Gemini"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -11,6 +11,23 @@ dependencies = [
     "python-dotenv",
     "google-genai>=1.61.0",
 ]
+
+[project.scripts]
+# Primary ergonomic shortcut command (Principle IX: CLI Ergonomics & Friction Reduction)
+tde = "src.cli.main:cli"
+# Full descriptive alias matching the project repository name
+tidal-discovery-engine = "src.cli.main:cli"
+
+[build-system]
+# Setuptools backend configured for PEP 621 metadata and console script generation
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# Include the src directory and its subpackages while preserving `from src...` imports
+where = ["."]
+include = ["src*"]
+namespaces = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
