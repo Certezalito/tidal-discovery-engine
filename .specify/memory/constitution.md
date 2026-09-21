@@ -1,8 +1,8 @@
 <!--
 Sync Impact Report:
-- **Version Change**: 1.10.0 → 1.11.0
-- **Modified Principles**: Principle X (Critical Dependency Currency & Capability Discovery) — amended to mandate updating the required version file (`pyproject.toml`) when new functionality in critical client libraries (e.g., `tidalapi`) is identified and adopted.
-- **Added Principles / Sections**: None (amended Principle X, Technical Standards & Workflow Quality Gate, and Compliance Review Expectations)
+- **Version Change**: 1.11.0 → 1.12.0
+- **Modified Principles**: None
+- **Added Principles / Sections**: Principle XI (Human Readability & Inline Intent Documentation), Quality Gate on Human Readability & Inline Comments, Compliance Review Expectations update
 - **Removed Sections**: None
 - **Templates requiring updates**: None
 - **Follow-up TODOs**: None
@@ -113,6 +113,20 @@ solved upstream. Enforcing explicit version constraints in the project's depende
 prevents deployment of stale environments, eliminates runtime missing-attribute failures, and ensures
 deterministic behavior across development, testing, and production runs.
 
+### XI. Human Readability & Inline Intent Documentation
+When updating, modifying, or creating code, contributors and automated agents MUST add
+clear, descriptive comments that explain what the code does and the rationale behind
+implementation choices, explicitly optimizing for human readability and maintainability.
+Code MUST NOT rely solely on compact or implicit syntax when the underlying logic, data
+flow, or edge cases can be clarified for human engineers. Inline comments and docstrings
+MUST be updated in lockstep with functional code changes so they never become stale,
+misleading, or disconnected from the executing logic.
+
+Rationale: Readable code with clear, intent-revealing comments drastically reduces cognitive
+load during maintenance, debugging, and code reviews. Explaining what non-trivial code does
+and the context behind decisions prevents regressions, speeds up comprehension, and ensures
+that both human maintainers and automated systems can reason about the codebase reliably.
+
 ## Mission
 To create a personalized music discovery tool that seamlessly integrates with a
 user's Tidal library, leverages Last.fm's recommendation engine, and automates
@@ -153,6 +167,10 @@ the creation of new playlists to enrich the user's listening experience.
   prioritize user ergonomics. Commands SHOULD support concise primary names with aliasing
   for discoverability, provide intelligent defaults for optional parameters to avoid
   unnecessary mandatory flags, and ensure validation errors provide immediate syntax guidance.
+- **Human Readability & Inline Comments**: When updating or writing code, contributors
+  MUST add clear comments describing what the code does and documenting the rationale
+  behind complex, non-obvious, or modified logic to optimize human readability. Code changes
+  MUST update or remove existing comments rendered obsolete by the modifications.
 - **Validation**: Behavior changes MUST include targeted automated checks covering
   the affected CLI flow, service behavior, or error handling. Pure documentation-only
   changes may satisfy this gate with linting or direct content validation.
@@ -188,12 +206,13 @@ Compliance Review Expectations:
 - All PRs and reviews MUST verify compliance with Core Principles and Quality
   Gates.
 - Reviewers MUST reject feature changes that lack documentation updates, skip
-  required targeted validation, fail understandability checks, introduce awkward or
-  excessively verbose CLI requirements when concise ergonomics and sensible defaults
+  required targeted validation, fail understandability checks, fail to provide clear
+  explanatory comments on new or updated code to ensure human readability, introduce
+  awkward or excessively verbose CLI requirements when concise ergonomics and sensible defaults
   could be provided, invent unknown facts without authoritative verification,
   overlook available upstream functionality in critical client libraries like `tidalapi`
   when planning new integrations, fail to update required dependency version files
   (`pyproject.toml`) when upstream capabilities are adopted, or prompt/rely on AI-generated
   ISRC codes.
 
-**Version**: 1.11.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-09-14
+**Version**: 1.12.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-09-21
