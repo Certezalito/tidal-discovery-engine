@@ -1,5 +1,6 @@
 """CLI integration tests for organize command, genre-organizer alias, legacy stub, and --refresh-genres flag."""
 
+import logging
 import os
 from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
@@ -289,3 +290,234 @@ def test_organize_cli_wipe_interactive_confirm_abort(mock_sync, mock_get_session
     assert "Aborted" in result.output
     mock_sync.assert_not_called()
 
+
+@patch("src.cli.main.tidal_service.get_session")
+@patch("src.cli.main.run_genre_organizer_sync")
+def test_organize_cli_flex_flag(mock_sync, mock_get_session):
+    runner = CliRunner()
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
+    mock_sync.return_value = _make_mock_summary()
+
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "fake_key"}):
+        result = runner.invoke(cli, ["organize", "--flex"])
+
+    assert result.exit_code == 0
+    assert "Connecting to Gemini via Flex tier (50% cost savings)." in result.output
+    mock_sync.assert_called_once_with(
+        mock_session,
+        "Genres",
+        min_genre_size=5,
+        db_path="data/genre_cache.db",
+        refresh_genres=False,
+        wipe_folder=False,
+        wipe_only=False,
+        flex=True,
+    )
+
+
+@patch("src.cli.main.tidal_service.get_session")
+@patch("src.cli.main.run_genre_organizer_sync")
+def test_organize_cli_no_flex_flag(mock_sync, mock_get_session):
+    runner = CliRunner()
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
+    mock_sync.return_value = _make_mock_summary()
+
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "fake_key"}):
+        result = runner.invoke(cli, ["organize", "--no-flex"])
+
+    assert result.exit_code == 0
+    assert "Connecting to Gemini via Flex tier" not in result.output
+    mock_sync.assert_called_once_with(
+        mock_session,
+        "Genres",
+        min_genre_size=5,
+        db_path="data/genre_cache.db",
+        refresh_genres=False,
+        wipe_folder=False,
+        wipe_only=False,
+        flex=False,
+    )
+
+
+@patch("src.cli.main.tidal_service.get_session")
+@patch("src.cli.main.run_genre_organizer_sync")
+def test_genre_organizer_alias_flex_flag(mock_sync, mock_get_session):
+    runner = CliRunner()
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
+    mock_sync.return_value = _make_mock_summary()
+
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "fake_key"}):
+        result = runner.invoke(cli, ["genre-organizer", "--flex"])
+
+    assert result.exit_code == 0
+    assert "Connecting to Gemini via Flex tier (50% cost savings)." in result.output
+    mock_sync.assert_called_once_with(
+        mock_session,
+        "Genres",
+        min_genre_size=5,
+        db_path="data/genre_cache.db",
+        refresh_genres=False,
+        wipe_folder=False,
+        wipe_only=False,
+        flex=True,
+    )
+
+
+@patch("src.cli.main.tidal_service.get_session")
+@patch("src.cli.main.run_genre_organizer_sync")
+def test_organize_cli_keyboard_interrupt(mock_sync, mock_get_session):
+    runner = CliRunner()
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
+    mock_sync.side_effect = KeyboardInterrupt()
+
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "fake_key"}):
+        result = runner.invoke(cli, ["organize", "--flex"])
+
+    assert result.exit_code == 130
+    assert "Operation canceled by user." in result.output
+
+
+@patch("src.cli.main.tidal_service.get_session")
+@patch("src.cli.main.run_genre_organizer_sync")
+def test_organize_cli_flex_confirmation_in_summary_and_logs(mock_sync, mock_get_session, caplog):
+    runner = CliRunner()
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
+    mock_sync.return_value = _make_mock_summary()
+
+    with caplog.at_level(logging.INFO):
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "fake_key"}):
+            result = runner.invoke(cli, ["organize", "--flex"])
+
+    assert result.exit_code == 0
+    assert "Gemini Service Tier:    Flex mode utilized (50% token cost reduction)" in result.output
+    assert "Gemini flex mode utilized for batch genre classification." in caplog.text
+
+
+@patch("src.cli.main.tidal_service.get_session")
+@patch("src.cli.main.run_genre_organizer_sync")
+def test_organize_cli_flex_fallback_in_summary_and_logs(mock_sync, mock_get_session, caplog):
+    runner = CliRunner()
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
+    mock_summary = _make_mock_summary()
+    mock_summary.fallback_triggered = True
+    mock_summary.service_tier = "standard"
+    mock_sync.return_value = mock_summary
+
+    with caplog.at_level(logging.INFO):
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "fake_key"}):
+            result = runner.invoke(cli, ["organize", "--flex"])
+
+    assert result.exit_code == 0
+    assert "Gemini Service Tier:    Standard tier utilized (fallback from flex)" in result.output
+    assert "Flex mode utilized" not in result.output
+    assert "Gemini standard tier utilized for batch genre classification (fallback from flex)." in caplog.text
+    assert "Gemini flex mode utilized for batch genre classification." not in caplog.text
+
+
+@patch("src.cli.main.tidal_service.get_session")
+@patch("src.cli.main.run_genre_organizer_sync")
+def test_organize_cli_flex_fallback_standard_flag(mock_sync, mock_get_session):
+    runner = CliRunner()
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
+    mock_sync.return_value = _make_mock_summary()
+
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "fake_key"}):
+        result = runner.invoke(cli, ["organize", "--flex", "--flex-fallback-standard"])
+
+    assert result.exit_code == 0
+    mock_sync.assert_called_once_with(
+        mock_session,
+        "Genres",
+        min_genre_size=5,
+        db_path="data/genre_cache.db",
+        refresh_genres=False,
+        wipe_folder=False,
+        wipe_only=False,
+        flex=True,
+        flex_fallback_standard=True,
+    )
+
+    mock_sync.reset_mock()
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "fake_key"}):
+        result_no = runner.invoke(cli, ["organize", "--flex", "--no-flex-fallback-standard"])
+
+    assert result_no.exit_code == 0
+    mock_sync.assert_called_once_with(
+        mock_session,
+        "Genres",
+        min_genre_size=5,
+        db_path="data/genre_cache.db",
+        refresh_genres=False,
+        wipe_folder=False,
+        wipe_only=False,
+        flex=True,
+        flex_fallback_standard=False,
+    )
+
+
+@patch("src.services.gemini_service.classify_tracks_genres")
+@patch("src.services.tidal_service.create_playlist_in_folder")
+@patch("src.services.tidal_service.get_playlists_in_folder", return_value=[])
+@patch("src.services.tidal_service.get_or_create_folder")
+@patch("src.services.tidal_service.fetch_all_favorite_tracks")
+def test_genre_organizer_sticky_fallback_across_batches(
+    mock_get_tracks,
+    mock_get_folder,
+    mock_get_playlists,
+    mock_create_playlist,
+    mock_classify,
+    tmp_path,
+):
+    from src.services.genre_organizer_service import run_genre_organizer_sync
+    mock_session = MagicMock()
+    mock_get_folder.return_value = MagicMock(id="f1")
+
+    # 100 tracks to create multiple batches (BATCH_SIZE is 50 in genre_organizer_service)
+    class FakeTrack:
+        def __init__(self, i):
+            self.id = f"t{i}"
+            self.name = f"Track {i}"
+            self.title = f"Track {i}"
+            self.isrc = f"ISRC{i}"
+            self.artist = type("FakeArtist", (), {"name": f"Artist {i}"})()
+
+    tracks = [FakeTrack(i) for i in range(100)]
+    mock_get_tracks.return_value = (tracks, 2)
+
+    calls = []
+
+    def side_effect_classify(api_key, batch_inputs, flex=None, flex_fallback_standard=None, on_fallback=None, **kwargs):
+        calls.append(flex)
+        if on_fallback and flex:
+            on_fallback()
+        return [
+            {"artist": t["artist"], "title": t["title"], "isrc": t.get("isrc"), "primary_genre": "Rock", "sub_genres": []}
+            for t in batch_inputs
+        ]
+
+    mock_classify.side_effect = side_effect_classify
+
+    db_path = str(tmp_path / "test_genre_cache.db")
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "test_key"}):
+        summary = run_genre_organizer_sync(
+            mock_session,
+            "Genres",
+            db_path=db_path,
+            flex=True,
+            flex_fallback_standard=True,
+        )
+
+    assert summary.library_tracks_scanned == 100
+    assert mock_classify.call_count == 2
+    assert calls == [True, False]
+    assert mock_classify.call_args_list[0].kwargs.get("flex_fallback_standard") is True
+    assert mock_classify.call_args_list[1].kwargs.get("flex_fallback_standard") is True
+    assert summary.fallback_triggered is True
+    assert summary.service_tier == "standard"

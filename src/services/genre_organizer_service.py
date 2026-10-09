@@ -16,6 +16,8 @@ class GenreRunSummary(BaseModel):
     tracks_removed: int = 0
     folder_id: Optional[str] = None
     folder_url: Optional[str] = None
+    service_tier: Optional[str] = None
+    fallback_triggered: bool = False
 
 def _get_tracks_batch(tracks, batch_size=100):
     for i in range(0, len(tracks), batch_size):
@@ -54,9 +56,17 @@ def run_genre_organizer_sync(
     refresh_genres: bool = False,
     wipe_folder: bool = False,
     wipe_only: bool = False,
+    flex: Optional[bool] = None,
+    flex_fallback_standard: Optional[bool] = None,
 ) -> GenreRunSummary:
     """
     Orchestrates the full genre organizer sync workflow using SQLite caching.
+
+    Args:
+        flex: Optional toggle for Gemini flex tier inference (50% cheaper, variable turnaround).
+        flex_fallback_standard: Optional toggle to fallback to standard tier inference if flex
+            capacity is unavailable. Once triggered for any batch, subsequent batches within
+            this run continue directly on standard tier (sticky fallback per FR-022).
     """
     import os
     import logging
@@ -182,6 +192,19 @@ def run_genre_organizer_sync(
     if uncached_tracks:
         logging.info(f"{len(uncached_tracks)} tracks not cached or UNKNOWN. Querying Gemini...")
         records_to_save = []
+        active_flex = flex
+        from src.services.gemini_service import _resolve_service_tier
+        initial_tier, _, _ = _resolve_service_tier(flex)
+
+        def on_batch_fallback():
+            nonlocal active_flex
+            summary.fallback_triggered = True
+            if active_flex is not False:
+                logging.warning(
+                    "Gemini flex capacity exhausted for batch. Sticky fallback active: subsequent batches in this run will execute directly on standard tier."
+                )
+                active_flex = False
+
         for batch in _get_tracks_batch(uncached_tracks, batch_size=50):
             batch_inputs = []
             for t in batch:
@@ -191,8 +214,16 @@ def run_genre_organizer_sync(
                     "isrc": getattr(t, "isrc", "")
                 })
                 
-            results = classify_tracks_genres(api_key, batch_inputs)
+            # Forward flex tier and fallback setting to Gemini batch classification (Principle VI, FR-022)
+            results = classify_tracks_genres(
+                api_key,
+                batch_inputs,
+                flex=active_flex,
+                flex_fallback_standard=flex_fallback_standard,
+                on_fallback=on_batch_fallback,
+            )
             
+            batch_records = []
             for track, result in zip(batch, results):
                 primary_genre = result.get("primary_genre") or result.get("genre")
                 sub_genres = result.get("sub_genres") or []
@@ -203,14 +234,16 @@ def run_genre_organizer_sync(
                 if not primary_genre or primary_genre.strip().lower() in ("unknown", ""):
                     unknown_track_ids.append(track.id)
                     summary.unknown_tracks += 1
-                    records_to_save.append({
+                    rec = {
                         "track_id": key,
                         "artist": artist_name,
                         "title": title_str,
                         "primary_genre": "Unknown",
                         "sub_genres": [],
                         "status": "UNKNOWN",
-                    })
+                    }
+                    records_to_save.append(rec)
+                    batch_records.append(rec)
                 else:
                     summary.classified_tracks += 1
                     genre_key = primary_genre.strip()
@@ -222,16 +255,27 @@ def run_genre_organizer_sync(
                             clean_subs.append(s_clean)
                             add_to_genre_groups(s_clean, track.id, is_sub=True)
 
-                    records_to_save.append({
+                    rec = {
                         "track_id": key,
                         "artist": artist_name,
                         "title": title_str,
                         "primary_genre": genre_key,
                         "sub_genres": clean_subs,
                         "status": "CLASSIFIED",
-                    })
+                    }
+                    records_to_save.append(rec)
+                    batch_records.append(rec)
 
-        cache_service.save_track_genres(records_to_save)
+            # Persist batch immediately to local SQLite cache (Principle VII)
+            if batch_records:
+                cache_service.save_track_genres(batch_records)
+
+        if summary.fallback_triggered:
+            summary.service_tier = "standard"
+        elif active_flex is False or initial_tier == "standard":
+            summary.service_tier = "standard"
+        else:
+            summary.service_tier = "flex"
 
     # Thresholding: Standalone playlists are created ONLY for genres and sub-genres with >= min_genre_size tracks.
     # Tracks whose primary genre has < min_genre_size tracks are routed to "Others".

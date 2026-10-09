@@ -25,12 +25,19 @@ A command-line tool that generates Tidal playlists with recommended tracks using
     GEMINI_API_KEY=your_gemini_api_key
     GEMINI_MODEL=
     GEMINI_FALLBACK_MODEL=
+    GEMINI_SERVICE_TIER=standard
+    GEMINI_FLEX_TIMEOUT_SECONDS=900
+    GEMINI_FLEX_FALLBACK_STANDARD=false
+    # or: GEMINI_SERVICE_TIER_FALLBACK=standard
     ```
 
     - Get a Last.fm API key from the [Last.fm API account page](https://www.last.fm/api/account/create).
     - Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey). Required only if you use `--gemini`.
     - `GEMINI_MODEL` is optional. Resolution order: exported environment variable → `.env` value → built-in default (`gemini-flash-latest`). Setting to `latest` or leaving blank automatically uses Google's latest Flash model.
     - `GEMINI_FALLBACK_MODEL` is optional. Used only when the primary model is unavailable or not found.
+    - `GEMINI_SERVICE_TIER` is optional (`standard` or `flex`, default: `standard`). When set to `flex`, requests route through Google Gemini's flex service tier for 50% lower token pricing (turnaround turnaround is variable, typically 1–15 minutes). Overridden by explicit `--flex` or `--no-flex` CLI flags.
+    - `GEMINI_FLEX_TIMEOUT_SECONDS` is optional (positive integer, default: `900` seconds / 15 minutes). Sets client HTTP timeout for flex tier requests.
+    - `GEMINI_FLEX_FALLBACK_STANDARD` (or `GEMINI_SERVICE_TIER_FALLBACK`) is optional (`true` or `false`, or `standard`, default: `false`). When set to `true` (or `GEMINI_SERVICE_TIER_FALLBACK=standard`), automatically falls back to standard tier inference if flex capacity encounters demand spikes (HTTP 503), capacity shedding (HTTP 429), or timeouts after retries, logging a warning rather than failing fast. Overridden by `--flex-fallback-standard` / `--no-flex-fallback-standard` CLI flags.
 
 4. Run the script once interactively to authenticate with Tidal:
 
@@ -81,6 +88,22 @@ Uses Google Gemini AI instead of Last.fm to generate recommendations.
 uv run tde recommend --gemini --playlist-name "TDE Gemini Hits" --folder "Tidal Discovery Engine"
 ```
 
+#### `--flex / --no-flex` (50% cheaper token pricing)
+
+Routes Gemini recommendations through Google's discounted flex service tier (50% cheaper token rates, variable turnaround typically 1–15 minutes using opportunistic capacity). Requires `--gemini`. `--no-flex` explicitly forces standard tier inference, overriding `GEMINI_SERVICE_TIER=flex` in `.env`:
+
+```bash
+uv run tde recommend --gemini --flex --playlist-name "TDE Flex Discovery" --folder "Tidal Discovery Engine"
+```
+
+#### `--flex-fallback-standard / --no-flex-fallback-standard` (Automatic Standard Fallback)
+
+Automatically falls back to standard tier inference if flex capacity is temporarily exhausted (HTTP 503 / 429) or times out after retries, logging a warning rather than failing fast. Can also be enabled globally via `GEMINI_FLEX_FALLBACK_STANDARD=true` or `GEMINI_SERVICE_TIER_FALLBACK=standard` in `.env`. Defaults to disabled (`False`) to prevent unexpected billing. Requires `--gemini`:
+
+```bash
+uv run tde recommend --gemini --flex --flex-fallback-standard --playlist-name "TDE Flex Discovery"
+```
+
 
 ### `radio`
 
@@ -110,6 +133,22 @@ uv run tde radio --artist "Burial" --track "Archangel" --gemini
 ```
 
 - **Graceful fallback**: If the configured Gemini model is unavailable, the command automatically falls back to Last.fm recommendations with a warning.
+
+#### `--flex / --no-flex` (50% cheaper token pricing)
+
+Routes Gemini radio recommendations through the discounted flex tier. Requires `--gemini`. `--no-flex` forces standard tier:
+
+```bash
+uv run tde radio --artist "Burial" --track "Archangel" --gemini --flex
+```
+
+#### `--flex-fallback-standard / --no-flex-fallback-standard`
+
+Fallback to standard tier inference if flex capacity is unavailable during radio generation. Can also be enabled globally via `GEMINI_FLEX_FALLBACK_STANDARD=true` or `GEMINI_SERVICE_TIER_FALLBACK=standard` in `.env`. Requires `--gemini`:
+
+```bash
+uv run tde radio --artist "Burial" --track "Archangel" --gemini --flex --flex-fallback-standard
+```
 
 #### `--shuffle` 
 
@@ -177,6 +216,8 @@ uv run tde organize --refresh-genres
 - **Interactive Confirmation:** Running `--wipe-folder` or `--wipe-only` in an interactive terminal prompts for confirmation (`Are you sure you want to delete all playlists in folder '...'? [y/N]`) unless `--yes` / `-y` is supplied or non-interactive execution is detected.
 - **Multi-Genre Organization:** Gemini identifies 1 primary genre and up to 3 specific sub-genres, strictly avoiding generic umbrella terms like "Rock" or "Pop" when specific styles apply. Tracks are added to both their primary and all qualifying sub-genre playlists.
 - **Minimum Genre Size & Sub-Genre Suppression:** The default minimum genre size is 5 tracks. Standalone playlists are created only for genres and sub-genres with at least 5 tracks (or the configured `--min-genre-size`). Primary genres with fewer tracks are consolidated into "Others", while sparse sub-genres with fewer tracks are suppressed from standalone playlist creation to prevent clutter.
+- **Flex Tier Batch Classification (`--flex / --no-flex`):** Route Gemini batch classification requests through Google's flex service tier to achieve 50% token cost savings on cache misses during library scanning. Turnaround is typically 1–15 minutes.
+- **Standard Tier Fallback (`--flex-fallback-standard` / `GEMINI_SERVICE_TIER_FALLBACK=standard`):** Automatically fall back to standard tier if flex opportunistic capacity encounters demand spikes (HTTP 503), shedding (HTTP 429), or timeouts. Can be enabled globally via `GEMINI_FLEX_FALLBACK_STANDARD=true` or `GEMINI_SERVICE_TIER_FALLBACK=standard` in `.env`. In multi-batch library organization runs, fallback is **sticky**: once triggered on any batch, all subsequent batches execute directly on standard tier without repeating flex retry delay cycles.
 - Re-running the command syncs the existing playlists by adding new tracks and removing tracks that are no longer in your library, without creating duplicates.
 - **SQLite Caching:** Track genre classification results are cached locally in an SQLite database (default: `data/genre_cache.db`). On subsequent runs, cached classifications are reused with zero Gemini token cost, and token cost reduction percentages are reported in the CLI output.
 - **`--refresh-genres`:** Forces Gemini to re-classify all tracks in your library from scratch, ignoring existing cached entries in SQLite. Note: this parameter is token-expensive depending on your library size.
@@ -192,6 +233,8 @@ uv run tde organize --refresh-genres
 | --- | --- | --- | --- |
 | `--playlist-name` | Name for the new Tidal playlist. Use `{date}` for dynamic date. | `"Discovery {date}"` | No |
 | `--gemini` | Use Gemini AI for recommendations instead of Last.fm. | `False` | No |
+| `--flex / --no-flex` | Route Gemini recommendations through discounted flex tier (50% cheaper token rates, 1–15 min turnaround). Requires `--gemini`. `--no-flex` forces standard tier. | `None` | No |
+| `--flex-fallback-standard / --no-flex-fallback-standard` | Automatically fallback to standard tier inference if flex capacity is exhausted or times out. Requires `--gemini`. Can be set in `.env` via `GEMINI_FLEX_FALLBACK_STANDARD=true` or `GEMINI_SERVICE_TIER_FALLBACK=standard`. | `None` (disabled) | No |
 | `--num-tidal-tracks` | Number of random favorite tracks to select as seeds. | `10` | No |
 | `--num-similar-tracks` | Number of similar tracks to retrieve per seed. | `5` | No |
 | `--shuffle` | Changes recommendation behavior (deep cuts/variety). | `False` | No |
@@ -208,6 +251,8 @@ uv run tde organize --refresh-genres
 | `--num-tracks` | Desired total number of tracks (1 seed at Track #1 + recommendations). | `50` | No |
 | `--num-similar-tracks` | Alias for `--num-tracks`. | `50` | No |
 | `--gemini` | Use Google Gemini AI for recommendations instead of Last.fm. | `False` | No |
+| `--flex / --no-flex` | Route Gemini single-seed recommendations through discounted flex tier. Requires `--gemini`. `--no-flex` forces standard tier. | `None` | No |
+| `--flex-fallback-standard / --no-flex-fallback-standard` | Automatically fallback to standard tier inference if flex capacity is exhausted or times out. Requires `--gemini`. Can be set in `.env` via `GEMINI_FLEX_FALLBACK_STANDARD=true` or `GEMINI_SERVICE_TIER_FALLBACK=standard`. | `None` (disabled) | No |
 | `--shuffle` | Deep cuts with Gemini AI or shuffle with Last.fm. | `False` | No |
 | `--exclude-favorites` | Exclude tracks already present in your Tidal favorites. | `False` | No |
 | `--folder` | Tidal folder to place the playlist in. | `Radio` | No |
@@ -225,6 +270,8 @@ These parameters apply identically to `organize` and its alias `genre-organizer`
 | `--wipe-folder`, `--wipe` | Delete all existing playlists inside the target folder before synchronizing new playlists. | `False` | No |
 | `--wipe-only` | Delete all existing playlists inside the target folder and terminate immediately. | `False` | No |
 | `--yes`, `-y` | Skip interactive confirmation prompt when wiping playlists. | `False` | No |
+| `--flex / --no-flex` | Route Gemini batch classification requests through discounted flex tier (50% cheaper tokens). `--no-flex` forces standard tier. | `None` | No |
+| `--flex-fallback-standard / --no-flex-fallback-standard` | Automatically fallback to standard tier inference if flex capacity is exhausted or times out. In multi-batch runs, fallback is sticky for subsequent batches. Can be set in `.env` via `GEMINI_FLEX_FALLBACK_STANDARD=true` or `GEMINI_SERVICE_TIER_FALLBACK=standard`. | `None` (disabled) | No |
 
 ## Troubleshooting
 
@@ -296,6 +343,50 @@ uv run tde radio --artist "Lost Tribe" --track "Gamemaster"
 3. If you must proceed immediately without exclusion, rerun without `--exclude-favorites`.
 
 **Note:** Favorites exclusion data is held in memory for the current run only; no favorites cache file is written.
+
+### Gemini Flex Tier Capacity Constraints
+
+**Symptoms:** The CLI exits with an error mentioning `category='flex-capacity'` or "Gemini flex tier capacity is temporarily unavailable due to demand".
+
+**Explanation:** Flex tier relies on Google Gemini opportunistic server capacity. During peak demand periods, flex capacity may be preempted or temporarily shed (HTTP 429 / 503). When this occurs, the engine automatically waits and retries using progressive backoff (up to 5 retries by default: 5s, 10s, 20s, 30s, 60s) to give transient capacity spikes time to subside. You can customize the maximum number of retries via `GEMINI_FLEX_MAX_RETRIES` in `.env`. To protect against unexpected costs (Principle VI: Cost Protection), the engine **never** silently falls back to full-price standard billing by default.
+
+**Configuring Automatic Standard Tier Fallback:**
+If you prefer your operations to finish uninterrupted even when flex capacity is unavailable, you can opt in to standard tier fallback:
+- **CLI flag:** Supply `--flex-fallback-standard` (or `--no-flex-fallback-standard` to disable).
+- **Environment variable:** Set `GEMINI_FLEX_FALLBACK_STANDARD=true` (or `GEMINI_SERVICE_TIER_FALLBACK=standard`) in your `.env` file:
+
+```bash
+# In your .env file:
+GEMINI_SERVICE_TIER=flex
+GEMINI_FLEX_FALLBACK_STANDARD=true
+# (or GEMINI_SERVICE_TIER_FALLBACK=standard)
+```
+
+When fallback is active and flex capacity retries are exhausted or time out, the engine emits a WARNING log:
+`Gemini flex capacity unavailable (HTTP 503 / timeout). Falling back to standard tier as configured (GEMINI_FLEX_FALLBACK_STANDARD).`
+and seamlessly re-executes using standard tier inference without aborting.
+
+In multi-batch library organization (`tde organize`), fallback is **sticky**: once any batch triggers standard fallback, all subsequent batches within that run execute directly on standard tier to avoid repeated multi-minute retry delays.
+
+**Corrective action:**
+1. If fallback is disabled and you want immediate execution, run with `--flex-fallback-standard` (or set `GEMINI_FLEX_FALLBACK_STANDARD=true` / `GEMINI_SERVICE_TIER_FALLBACK=standard` in `.env`).
+2. Force standard tier directly with `--no-flex` (or rerun without `--flex` if `GEMINI_SERVICE_TIER` is not set to `flex`).
+3. Alternatively, wait a short while and retry the command under pure flex mode once capacity frees up.
+
+### Gemini Flex Tier Request Timeout
+
+**Symptoms:** The CLI exits with an error mentioning `category='flex-timeout'` or "Gemini flex tier request timed out due to extended capacity queueing".
+
+**Explanation:** Flex requests target a 1–15 minute response turnaround. If provider queue delays exceed the client HTTP timeout (default: 900 seconds / 15 minutes), the request times out.
+
+**Corrective action:**
+1. Retry later when provider demand is lower.
+2. Increase the timeout limit via `GEMINI_FLEX_TIMEOUT_SECONDS` in `.env` (e.g. `GEMINI_FLEX_TIMEOUT_SECONDS=1200`).
+3. Run with `--no-flex` to execute immediately under standard tier inference.
+
+### User Cancellation (Ctrl+C)
+
+If you cancel a long-running flex request by pressing `Ctrl+C` (SIGINT) while waiting for opportunistic capacity, the CLI cleanly prints `Operation canceled by user.` and exits with code 130 without stack traces.
 
 ## Scheduling
 

@@ -1,8 +1,14 @@
 import os
+import sys
 import click
 import logging
 import datetime
 import random
+
+FLEX_UPFRONT_NOTICE = (
+    "Connecting to Gemini via Flex tier (50% cost savings).\n"
+    "Flex tier uses opportunistic capacity; response turnaround is typically 1–15 minutes. Please wait..."
+)
 from src.lib.logging import (
     setup_logging,
     log_cli_warning,
@@ -51,8 +57,16 @@ def generate_track_radio(
     exclude_favorites: bool = False,
     folder: str | None = None,
     caller_mode: str = "radio",
+    flex: bool | None = None,
+    flex_fallback_standard: bool | None = None,
 ):
     clean_artist, clean_track = validate_radio_inputs(artist, track, num_tracks)
+
+    # Flex mode validation (Principle IX & Contract Section 1.2)
+    if flex is not None and not gemini:
+        raise click.ClickException("--flex and --no-flex flags require --gemini.")
+    if flex_fallback_standard is not None and not gemini:
+        raise click.ClickException("--flex-fallback-standard and --no-flex-fallback-standard flags require --gemini.")
 
     if gemini and "GEMINI_API_KEY" not in os.environ:
         raise click.ClickException("--gemini flag requires GEMINI_API_KEY environment variable.")
@@ -134,9 +148,19 @@ def generate_track_radio(
         final_playlist_tags = []
         no_similar_tracks_seeds = []
         use_gemini = gemini
+        radio_fallback_occurred = False
+
+        def on_radio_flex_fallback():
+            nonlocal radio_fallback_occurred
+            radio_fallback_occurred = True
 
         if use_gemini:
             logging.info("Branch: Using Gemini AI for recommendations.")
+            # Upfront turnaround notice for flex mode (Principle IX & Contract Section 2)
+            resolved_tier, _, _ = gemini_service._resolve_service_tier(flex)
+            if resolved_tier == "flex":
+                click.echo(FLEX_UPFRONT_NOTICE)
+
             total_count = needed_recommendations * (3 if exclude_favorites else 1)
             try:
                 recommendations = gemini_service.get_recommendations(
@@ -144,6 +168,9 @@ def generate_track_radio(
                     seed_tracks=seed_tracks_for_provider,
                     count=total_count,
                     shuffle=shuffle,
+                    flex=flex,
+                    flex_fallback_standard=flex_fallback_standard,
+                    on_fallback=on_radio_flex_fallback,
                 )
             except GeminiModelUnavailableError as model_error:
                 log_cli_warning(
@@ -340,10 +367,21 @@ def generate_track_radio(
 
         playlist_url = f"https://tidal.com/browse/playlist/{playlist.id}"
         logging.info(f"Playlist available at: {playlist_url}")
-        click.echo(f"\nPlaylist '{playlist_name}' created successfully!")
+        if use_gemini and resolved_tier == "flex":
+            if radio_fallback_occurred:
+                logging.info("Gemini standard tier completed successfully for single-seed radio playlist (fallback from flex).")
+                click.echo(f"\nPlaylist '{playlist_name}' created successfully (Standard tier utilized via flex fallback)!")
+            else:
+                logging.info("Gemini flex mode completed successfully for single-seed radio playlist.")
+                click.echo(f"\nPlaylist '{playlist_name}' created successfully (Flex mode utilized)!")
+        else:
+            click.echo(f"\nPlaylist '{playlist_name}' created successfully!")
         click.echo(f"View it here: {playlist_url}")
         return playlist
 
+    except KeyboardInterrupt:
+        click.echo("Operation canceled by user.")
+        sys.exit(130)
     except click.ClickException:
         raise
     except Exception as e:
@@ -361,7 +399,17 @@ def generate_track_radio(
 @click.option("--shuffle", is_flag=True, help="Trigger deep cuts with Gemini or shuffle Last.fm recommendations.")
 @click.option("--exclude-favorites", is_flag=True, help="Exclude tracks that already exist in your Tidal favorites.")
 @click.option("--folder", default="Radio", show_default=True, help="Tidal folder name to organize the playlist.")
-def radio(artist, track, playlist_name, num_tracks, num_tracks_alias, gemini, shuffle, exclude_favorites, folder):
+@click.option(
+    "--flex/--no-flex",
+    default=None,
+    help="Use Google Gemini flex service tier (50% cheaper token rates, variable latency).",
+)
+@click.option(
+    "--flex-fallback-standard/--no-flex-fallback-standard",
+    default=None,
+    help="Automatically fallback to standard tier inference if flex capacity is exhausted or times out.",
+)
+def radio(artist, track, playlist_name, num_tracks, num_tracks_alias, gemini, shuffle, exclude_favorites, folder, flex, flex_fallback_standard):
     """
     Generate a track radio playlist starting with a specific seed song.
     """
@@ -377,6 +425,8 @@ def radio(artist, track, playlist_name, num_tracks, num_tracks_alias, gemini, sh
         exclude_favorites=exclude_favorites,
         folder=folder,
         caller_mode="radio",
+        flex=flex,
+        flex_fallback_standard=flex_fallback_standard,
     )
 
 
@@ -397,12 +447,29 @@ def radio(artist, track, playlist_name, num_tracks, num_tracks_alias, gemini, sh
     is_flag=True,
     help="Exclude tracks that already exist in your Tidal favorites from playlist output.",
 )
-def recommend(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, folder, exclude_favorites):
+@click.option(
+    "--flex/--no-flex",
+    default=None,
+    help="Use Google Gemini flex service tier (50% cheaper token rates, variable latency).",
+)
+@click.option(
+    "--flex-fallback-standard/--no-flex-fallback-standard",
+    default=None,
+    help="Automatically fallback to standard tier inference if flex capacity is exhausted or times out.",
+)
+def recommend(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_name, folder, exclude_favorites, flex, flex_fallback_standard):
     """
     Generates a new Tidal playlist with recommended tracks based on a selection of your favorite tracks.
     """
     setup_logging()
     logging.info("Starting playlist generation...")
+
+    # Flex mode and fallback validation (Principle IX, Contract Section 1.1, FR-006)
+    # Both tier selection and fallback flags configure the Gemini pipeline and require --gemini.
+    if flex is not None and not gemini:
+        raise click.ClickException("--flex and --no-flex flags require --gemini.")
+    if flex_fallback_standard is not None and not gemini:
+        raise click.ClickException("--flex-fallback-standard and --no-flex-fallback-standard flags require --gemini.")
 
     if num_similar_tracks <= 0:
         raise click.ClickException("--num-similar-tracks must be a positive integer.")
@@ -465,10 +532,19 @@ def recommend(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_na
         no_similar_tracks_seeds = []
         use_gemini = gemini
         requested_track_count = len(seed_tracks) * num_similar_tracks
+        recommend_fallback_occurred = False
+
+        def on_recommend_flex_fallback():
+            nonlocal recommend_fallback_occurred
+            recommend_fallback_occurred = True
 
         if use_gemini:
             # --- GEMINI RECOMMENDATION PATH ---
             logging.info("Branch: Using Gemini AI for recommendations.")
+            # Upfront turnaround notice for flex mode (Principle IX & Contract Section 2)
+            resolved_tier, _, _ = gemini_service._resolve_service_tier(flex)
+            if resolved_tier == "flex":
+                click.echo(FLEX_UPFRONT_NOTICE)
 
             # Calculate total tracks needed
             total_count = requested_track_count * (3 if exclude_favorites else 1)
@@ -480,6 +556,9 @@ def recommend(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_na
                     seed_tracks=seed_tracks,
                     count=total_count,
                     shuffle=shuffle,
+                    flex=flex,
+                    flex_fallback_standard=flex_fallback_standard,
+                    on_fallback=on_recommend_flex_fallback,
                 )
             except GeminiModelUnavailableError:
                 raise
@@ -654,9 +733,20 @@ def recommend(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_na
 
         playlist_url = f"https://tidal.com/browse/playlist/{playlist.id}"
         logging.info(f"Playlist available at: {playlist_url}")
-        click.echo(f"\nPlaylist '{playlist_name}' created successfully!")
+        if use_gemini and resolved_tier == "flex":
+            if recommend_fallback_occurred:
+                logging.info("Gemini standard tier completed successfully for playlist creation (fallback from flex).")
+                click.echo(f"\nPlaylist '{playlist_name}' created successfully (Standard tier utilized via flex fallback)!")
+            else:
+                logging.info("Gemini flex mode completed successfully for playlist creation.")
+                click.echo(f"\nPlaylist '{playlist_name}' created successfully (Flex mode utilized)!")
+        else:
+            click.echo(f"\nPlaylist '{playlist_name}' created successfully!")
         click.echo(f"View it here: {playlist_url}")
 
+    except KeyboardInterrupt:
+        click.echo("Operation canceled by user.")
+        sys.exit(130)
     except click.ClickException:
         raise
     except Exception as e:
@@ -671,16 +761,28 @@ def _execute_genre_organizer(
     wipe_folder: bool = False,
     wipe_only: bool = False,
     yes: bool = False,
+    flex: bool | None = None,
+    flex_fallback_standard: bool | None = None,
 ):
     """
     Shared execution handler for genre organizer synchronization.
+
+    Args:
+        folder: Destination Tidal folder name.
+        min_genre_size: Minimum track count for a genre/sub-genre to receive a standalone playlist.
+        db_path: Path to local SQLite metadata cache.
+        refresh_genres: If True, bypass cache and re-classify all library tracks via Gemini.
+        wipe_folder: If True, wipe all playlists in target folder before sync.
+        wipe_only: If True, wipe all playlists in target folder and exit immediately.
+        yes: If True, bypass interactive confirmation prompt when wiping playlists.
+        flex: Optional toggle for Gemini flex tier inference (50% cheaper token rates).
+        flex_fallback_standard: Optional toggle to fallback to standard tier if flex is unavailable (sticky across batches).
     """
     setup_logging()
     logging.info(f"Starting genre organizer sync in folder '{folder}' with min genre size {min_genre_size} (refresh_genres={refresh_genres}, wipe_folder={wipe_folder}, wipe_only={wipe_only})...")
 
     try:
         if (wipe_folder or wipe_only) and not yes:
-            import sys
             is_interactive = sys.stdin.isatty() or "click.testing" in getattr(sys.stdin.__class__, "__module__", "")
             if is_interactive:
                 click.confirm(f"Are you sure you want to delete all playlists in folder '{folder}'?", abort=True)
@@ -690,15 +792,28 @@ def _execute_genre_organizer(
         # Verify Gemini is configured if not wipe_only
         if not wipe_only and "GEMINI_API_KEY" not in os.environ:
             raise click.ClickException("genre organizer requires GEMINI_API_KEY environment variable.")
-            
+
+        # Upfront turnaround notice for flex mode (Principle IX & Contract Section 2)
+        if not wipe_only:
+            resolved_tier, _, _ = gemini_service._resolve_service_tier(flex)
+            if resolved_tier == "flex":
+                click.echo(FLEX_UPFRONT_NOTICE)
+
+        sync_kwargs = {
+            "min_genre_size": min_genre_size,
+            "db_path": db_path,
+            "refresh_genres": refresh_genres,
+            "wipe_folder": wipe_folder,
+            "wipe_only": wipe_only,
+        }
+        if flex is not None:
+            sync_kwargs["flex"] = flex
+        if flex_fallback_standard is not None:
+            sync_kwargs["flex_fallback_standard"] = flex_fallback_standard
         summary = run_genre_organizer_sync(
             tidal_session,
             folder,
-            min_genre_size=min_genre_size,
-            db_path=db_path,
-            refresh_genres=refresh_genres,
-            wipe_folder=wipe_folder,
-            wipe_only=wipe_only,
+            **sync_kwargs,
         )
         
         logging.info("Genre organizer sync complete.")
@@ -729,6 +844,13 @@ def _execute_genre_organizer(
         if isinstance(playlists_wiped, int) and playlists_wiped > 0:
             click.echo(f"Playlists Wiped:        {playlists_wiped}")
         if not wipe_only:
+            fallback_triggered = getattr(summary, "fallback_triggered", False) is True
+            if fallback_triggered:
+                logging.info("Gemini standard tier utilized for batch genre classification (fallback from flex).")
+                click.echo("Gemini Service Tier:    Standard tier utilized (fallback from flex)")
+            elif getattr(summary, "service_tier", None) == "flex" or (resolved_tier == "flex" and not fallback_triggered):
+                logging.info("Gemini flex mode utilized for batch genre classification.")
+                click.echo("Gemini Service Tier:    Flex mode utilized (50% token cost reduction)")
             click.echo(f"Library Tracks Scanned: {summary.library_tracks_scanned}")
             click.echo(f"Database Cache Hits:    {summary.cache_hits}")
             click.echo(f"Gemini API Queries:     {summary.cache_misses}")
@@ -748,10 +870,13 @@ def _execute_genre_organizer(
         if folder_url:
             click.echo(f"\nView folder '{folder}' here: {folder_url}")
 
+    except KeyboardInterrupt:
+        click.echo("Operation canceled by user.")
+        sys.exit(130)
     except (click.ClickException, click.Abort):
         raise
     except Exception as e:
-        logging.exception(f"Failed to run genre organizer: {e}")
+        logging.error(f"Failed to run genre organizer: {e}")
         raise click.ClickException(str(e))
 
 @cli.command("organize")
@@ -767,7 +892,17 @@ def _execute_genre_organizer(
 @click.option("--wipe-folder", "--wipe", is_flag=True, default=False, help="Delete all existing playlists inside the target folder before synchronizing new playlists.")
 @click.option("--wipe-only", is_flag=True, default=False, help="Delete all existing playlists inside the target folder and terminate immediately without synchronizing new playlists.")
 @click.option("--yes", "-y", is_flag=True, default=False, help="Skip interactive confirmation prompt when wiping playlists.")
-def organize_cmd(folder, min_genre_size, db_path, refresh_genres, wipe_folder, wipe_only, yes):
+@click.option(
+    "--flex/--no-flex",
+    default=None,
+    help="Use Google Gemini flex service tier for batch genre classification.",
+)
+@click.option(
+    "--flex-fallback-standard/--no-flex-fallback-standard",
+    default=None,
+    help="Automatically fallback to standard tier inference if flex capacity is exhausted or times out.",
+)
+def organize_cmd(folder, min_genre_size, db_path, refresh_genres, wipe_folder, wipe_only, yes, flex, flex_fallback_standard):
     """
     Reads the full Tidal library, categorizes tracks by genre via Gemini using a local database cache,
     and syncs genre playlists into the specified folder.
@@ -780,6 +915,8 @@ def organize_cmd(folder, min_genre_size, db_path, refresh_genres, wipe_folder, w
         wipe_folder=wipe_folder,
         wipe_only=wipe_only,
         yes=yes,
+        flex=flex,
+        flex_fallback_standard=flex_fallback_standard,
     )
 
 @cli.command("genre-organizer")
@@ -795,7 +932,17 @@ def organize_cmd(folder, min_genre_size, db_path, refresh_genres, wipe_folder, w
 @click.option("--wipe-folder", "--wipe", is_flag=True, default=False, help="Delete all existing playlists inside the target folder before synchronizing new playlists.")
 @click.option("--wipe-only", is_flag=True, default=False, help="Delete all existing playlists inside the target folder and terminate immediately without synchronizing new playlists.")
 @click.option("--yes", "-y", is_flag=True, default=False, help="Skip interactive confirmation prompt when wiping playlists.")
-def genre_organizer_cmd(folder, min_genre_size, db_path, refresh_genres, wipe_folder, wipe_only, yes):
+@click.option(
+    "--flex/--no-flex",
+    default=None,
+    help="Use Google Gemini flex service tier for batch genre classification.",
+)
+@click.option(
+    "--flex-fallback-standard/--no-flex-fallback-standard",
+    default=None,
+    help="Automatically fallback to standard tier inference if flex capacity is exhausted or times out.",
+)
+def genre_organizer_cmd(folder, min_genre_size, db_path, refresh_genres, wipe_folder, wipe_only, yes, flex, flex_fallback_standard):
     """
     Alias for 'organize'. Reads the full Tidal library, categorizes tracks by genre via Gemini using a local database cache,
     and syncs genre playlists into the specified folder.
@@ -808,6 +955,8 @@ def genre_organizer_cmd(folder, min_genre_size, db_path, refresh_genres, wipe_fo
         wipe_folder=wipe_folder,
         wipe_only=wipe_only,
         yes=yes,
+        flex=flex,
+        flex_fallback_standard=flex_fallback_standard,
     )
 
 @cli.command(

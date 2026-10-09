@@ -800,6 +800,392 @@ class TestCLI(unittest.TestCase):
         self.assertNotEqual(result_track.exit_code, 0)
         self.assertIn("No such option: --track", result_track.output)
 
+    def test_recommend_flex_flag_requires_gemini(self):
+        result_flex = self.runner.invoke(cli, ["recommend", "--flex"])
+        self.assertEqual(result_flex.exit_code, 1)
+        self.assertIn("Error: --flex and --no-flex flags require --gemini.", result_flex.output)
+
+        result_no_flex = self.runner.invoke(cli, ["recommend", "--no-flex"])
+        self.assertEqual(result_no_flex.exit_code, 1)
+        self.assertIn("Error: --flex and --no-flex flags require --gemini.", result_no_flex.output)
+
+    def test_recommend_flex_fallback_standard_flag_requires_gemini(self):
+        result_fallback = self.runner.invoke(cli, ["recommend", "--flex-fallback-standard"])
+        self.assertEqual(result_fallback.exit_code, 1)
+        self.assertIn("Error: --flex-fallback-standard and --no-flex-fallback-standard flags require --gemini.", result_fallback.output)
+
+        result_no_fallback = self.runner.invoke(cli, ["recommend", "--no-flex-fallback-standard"])
+        self.assertEqual(result_no_fallback.exit_code, 1)
+        self.assertIn("Error: --flex-fallback-standard and --no-flex-fallback-standard flags require --gemini.", result_no_fallback.output)
+
+    @patch("src.services.tidal_service.get_session")
+    @patch("src.cli.main.setup_logging")
+    @patch("src.services.tidal_service.get_random_favorite_tracks")
+    @patch("src.services.lastfm_service.get_network")
+    @patch("src.services.gemini_service.get_recommendations")
+    @patch("src.services.tidal_service.search_for_track")
+    @patch("src.services.tidal_service.create_playlist")
+    def test_recommend_gemini_flex_and_no_flex_invokes_service(
+        self,
+        mock_create_playlist,
+        mock_search_track,
+        mock_get_recommendations,
+        mock_get_network,
+        mock_get_favorites,
+        mock_setup_logging,
+        mock_get_session,
+    ):
+        mock_get_session.return_value = MagicMock()
+        mock_get_network.return_value = MagicMock()
+        mock_track = MagicMock()
+        mock_track.name = "Track A"
+        mock_track.artist.name = "Artist A"
+        mock_get_favorites.return_value = [mock_track]
+        mock_get_recommendations.return_value = [{"artist": "Rec Artist", "title": "Rec Track", "isrc": None}]
+        mock_search_track.return_value = MagicMock(id="t1", name="Rec Track")
+        mock_create_playlist.return_value = MagicMock(id="p1", name="Discovery")
+
+        # Test --gemini --flex
+        result_flex = self.runner.invoke(
+            cli,
+            ["recommend", "--gemini", "--flex"],
+            env={"GEMINI_API_KEY": "test-key"},
+        )
+        self.assertEqual(result_flex.exit_code, 0)
+        self.assertTrue(mock_get_recommendations.called)
+        _, kwargs_flex = mock_get_recommendations.call_args
+        self.assertEqual(kwargs_flex.get("flex"), True)
+
+        # Test --gemini --no-flex
+        mock_get_recommendations.reset_mock()
+        result_no_flex = self.runner.invoke(
+            cli,
+            ["recommend", "--gemini", "--no-flex"],
+            env={"GEMINI_API_KEY": "test-key"},
+        )
+        self.assertEqual(result_no_flex.exit_code, 0)
+        self.assertTrue(mock_get_recommendations.called)
+        _, kwargs_no_flex = mock_get_recommendations.call_args
+        self.assertEqual(kwargs_no_flex.get("flex"), False)
+
+        # Test --gemini --flex --flex-fallback-standard
+        mock_get_recommendations.reset_mock()
+        result_fallback = self.runner.invoke(
+            cli,
+            ["recommend", "--gemini", "--flex", "--flex-fallback-standard"],
+            env={"GEMINI_API_KEY": "test-key"},
+        )
+        self.assertEqual(result_fallback.exit_code, 0)
+        self.assertTrue(mock_get_recommendations.called)
+        _, kwargs_fallback = mock_get_recommendations.call_args
+        self.assertEqual(kwargs_fallback.get("flex"), True)
+        self.assertEqual(kwargs_fallback.get("flex_fallback_standard"), True)
+
+        # Test --gemini --flex --no-flex-fallback-standard
+        mock_get_recommendations.reset_mock()
+        result_no_fallback = self.runner.invoke(
+            cli,
+            ["recommend", "--gemini", "--flex", "--no-flex-fallback-standard"],
+            env={"GEMINI_API_KEY": "test-key"},
+        )
+        self.assertEqual(result_no_fallback.exit_code, 0)
+        self.assertTrue(mock_get_recommendations.called)
+        _, kwargs_no_fallback = mock_get_recommendations.call_args
+        self.assertEqual(kwargs_no_fallback.get("flex"), True)
+        self.assertEqual(kwargs_no_fallback.get("flex_fallback_standard"), False)
+
+    def test_radio_flex_flag_requires_gemini(self):
+        result_flex = self.runner.invoke(
+            cli,
+            ["radio", "--artist", "Artist A", "--track", "Track A", "--flex"],
+        )
+        self.assertEqual(result_flex.exit_code, 1)
+        self.assertIn("Error: --flex and --no-flex flags require --gemini.", result_flex.output)
+
+        result_no_flex = self.runner.invoke(
+            cli,
+            ["radio", "--artist", "Artist A", "--track", "Track A", "--no-flex"],
+        )
+        self.assertEqual(result_no_flex.exit_code, 1)
+        self.assertIn("Error: --flex and --no-flex flags require --gemini.", result_no_flex.output)
+
+    def test_radio_flex_fallback_standard_flag_requires_gemini(self):
+        result_fallback = self.runner.invoke(
+            cli,
+            ["radio", "--artist", "Artist A", "--track", "Track A", "--flex-fallback-standard"],
+        )
+        self.assertEqual(result_fallback.exit_code, 1)
+        self.assertIn("Error: --flex-fallback-standard and --no-flex-fallback-standard flags require --gemini.", result_fallback.output)
+
+        result_no_fallback = self.runner.invoke(
+            cli,
+            ["radio", "--artist", "Artist A", "--track", "Track A", "--no-flex-fallback-standard"],
+        )
+        self.assertEqual(result_no_fallback.exit_code, 1)
+        self.assertIn("Error: --flex-fallback-standard and --no-flex-fallback-standard flags require --gemini.", result_no_fallback.output)
+
+    @patch("src.services.tidal_service.get_session")
+    @patch("src.cli.main.setup_logging")
+    @patch("src.services.tidal_service.resolve_text_seed_track")
+    @patch("src.services.gemini_service.get_recommendations")
+    @patch("src.services.tidal_service.search_for_track")
+    @patch("src.services.tidal_service.create_playlist")
+    def test_radio_gemini_flex_invokes_service(
+        self,
+        mock_create_playlist,
+        mock_search_track,
+        mock_get_recommendations,
+        mock_resolve_seed,
+        mock_setup_logging,
+        mock_get_session,
+    ):
+        mock_get_session.return_value = MagicMock()
+        seed_mock = MagicMock(id="s1")
+        seed_mock.artist.name = "Artist A"
+        seed_mock.title = "Track A"
+        seed_mock.name = "Track A"
+        mock_resolve_seed.return_value = (seed_mock, "exact")
+        mock_get_recommendations.return_value = [{"artist": "Rec Artist", "title": "Rec Track", "isrc": None}]
+        mock_search_track.return_value = MagicMock(id="t1", name="Rec Track")
+        mock_create_playlist.return_value = MagicMock(id="p1", name="Artist A - Track A Radio")
+
+        result = self.runner.invoke(
+            cli,
+            ["radio", "--artist", "Artist A", "--track", "Track A", "--gemini", "--flex", "--flex-fallback-standard"],
+            env={"GEMINI_API_KEY": "test-key"},
+        )
+        self.assertEqual(result.exit_code, 0)
+        self.assertTrue(mock_get_recommendations.called)
+        _, kwargs = mock_get_recommendations.call_args
+        self.assertEqual(kwargs.get("flex"), True)
+        self.assertEqual(kwargs.get("flex_fallback_standard"), True)
+
+    @patch("src.services.tidal_service.get_session")
+    @patch("src.cli.main.setup_logging")
+    @patch("src.services.tidal_service.get_random_favorite_tracks")
+    @patch("src.services.lastfm_service.get_network")
+    @patch("src.services.gemini_service.get_recommendations")
+    @patch("src.services.tidal_service.search_for_track")
+    @patch("src.services.tidal_service.create_playlist")
+    def test_recommend_flex_emits_upfront_notice(
+        self,
+        mock_create_playlist,
+        mock_search_track,
+        mock_get_recommendations,
+        mock_get_network,
+        mock_get_favorites,
+        mock_setup_logging,
+        mock_get_session,
+    ):
+        mock_get_session.return_value = MagicMock()
+        mock_get_network.return_value = MagicMock()
+        mock_track = MagicMock()
+        mock_track.name = "Track A"
+        mock_track.artist.name = "Artist A"
+        mock_get_favorites.return_value = [mock_track]
+        mock_get_recommendations.return_value = [{"artist": "Rec Artist", "title": "Rec Track", "isrc": None}]
+        mock_search_track.return_value = MagicMock(id="t1", name="Rec Track")
+        mock_create_playlist.return_value = MagicMock(id="p1", name="Discovery")
+
+        result = self.runner.invoke(
+            cli,
+            ["recommend", "--gemini", "--flex"],
+            env={"GEMINI_API_KEY": "test-key"},
+        )
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Connecting to Gemini via Flex tier (50% cost savings).", result.output)
+        self.assertIn("response turnaround is typically 1–15 minutes", result.output)
+
+    @patch("src.services.tidal_service.get_session")
+    @patch("src.cli.main.setup_logging")
+    @patch("src.services.tidal_service.get_random_favorite_tracks")
+    @patch("src.services.lastfm_service.get_network")
+    @patch("src.services.gemini_service.get_recommendations")
+    def test_keyboard_interrupt_during_flex_exits_cleanly(
+        self,
+        mock_get_recommendations,
+        mock_get_network,
+        mock_get_favorites,
+        mock_setup_logging,
+        mock_get_session,
+    ):
+        mock_get_session.return_value = MagicMock()
+        mock_get_network.return_value = MagicMock()
+        mock_track = MagicMock()
+        mock_track.name = "Track A"
+        mock_track.artist.name = "Artist A"
+        mock_get_favorites.return_value = [mock_track]
+        mock_get_recommendations.side_effect = KeyboardInterrupt()
+
+        result = self.runner.invoke(
+            cli,
+            ["recommend", "--gemini", "--flex"],
+            env={"GEMINI_API_KEY": "test-key"},
+        )
+        self.assertEqual(result.exit_code, 130)
+        self.assertIn("Operation canceled by user.", result.output)
+
+    @patch("src.services.tidal_service.get_session")
+    @patch("src.cli.main.setup_logging")
+    @patch("src.services.tidal_service.get_random_favorite_tracks")
+    @patch("src.services.lastfm_service.get_network")
+    @patch("src.services.gemini_service.get_recommendations")
+    @patch("src.services.tidal_service.search_for_track")
+    @patch("src.services.tidal_service.create_playlist")
+    def test_recommend_flex_completion_confirmation(
+        self,
+        mock_create_playlist,
+        mock_search_track,
+        mock_get_recommendations,
+        mock_get_network,
+        mock_get_favorites,
+        mock_setup_logging,
+        mock_get_session,
+    ):
+        mock_get_session.return_value = MagicMock()
+        mock_get_network.return_value = MagicMock()
+        mock_track = MagicMock()
+        mock_track.name = "Track A"
+        mock_track.artist.name = "Artist A"
+        mock_get_favorites.return_value = [mock_track]
+        mock_get_recommendations.return_value = [{"artist": "Rec Artist", "title": "Rec Track", "isrc": None}]
+        mock_search_track.return_value = MagicMock(id="t1", name="Rec Track")
+        mock_create_playlist.return_value = MagicMock(id="p1", name="Discovery")
+
+        with self.assertLogs("root", level="INFO") as log_capture:
+            result = self.runner.invoke(
+                cli,
+                ["recommend", "--gemini", "--flex"],
+                env={"GEMINI_API_KEY": "test-key"},
+            )
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("created successfully (Flex mode utilized)!", result.output)
+        log_text = "\n".join(log_capture.output)
+        self.assertIn("Gemini flex mode completed successfully for playlist creation.", log_text)
+
+    @patch("src.services.tidal_service.get_session")
+    @patch("src.cli.main.setup_logging")
+    @patch("src.services.tidal_service.resolve_text_seed_track")
+    @patch("src.services.gemini_service.get_recommendations")
+    @patch("src.services.tidal_service.search_for_track")
+    @patch("src.services.tidal_service.create_playlist")
+    def test_radio_flex_completion_confirmation(
+        self,
+        mock_create_playlist,
+        mock_search_track,
+        mock_get_recommendations,
+        mock_resolve_seed,
+        mock_setup_logging,
+        mock_get_session,
+    ):
+        mock_get_session.return_value = MagicMock()
+        seed_mock = MagicMock(id="s1")
+        seed_mock.artist.name = "Artist A"
+        seed_mock.title = "Track A"
+        seed_mock.name = "Track A"
+        mock_resolve_seed.return_value = (seed_mock, "exact")
+        mock_get_recommendations.return_value = [{"artist": "Rec Artist", "title": "Rec Track", "isrc": None}]
+        mock_search_track.return_value = MagicMock(id="t1", name="Rec Track")
+        mock_create_playlist.return_value = MagicMock(id="p1", name="Artist A - Track A Radio")
+
+        with self.assertLogs("root", level="INFO") as log_capture:
+            result = self.runner.invoke(
+                cli,
+                ["radio", "--artist", "Artist A", "--track", "Track A", "--gemini", "--flex"],
+                env={"GEMINI_API_KEY": "test-key"},
+            )
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Playlist 'Artist A - Track A Radio' created successfully (Flex mode utilized)!", result.output)
+        log_text = "\n".join(log_capture.output)
+        self.assertIn("Gemini flex mode completed successfully for single-seed radio playlist.", log_text)
+
+    @patch("src.services.tidal_service.get_session")
+    @patch("src.cli.main.setup_logging")
+    @patch("src.services.tidal_service.resolve_text_seed_track")
+    @patch("src.services.gemini_service.get_recommendations")
+    @patch("src.services.tidal_service.search_for_track")
+    @patch("src.services.tidal_service.create_playlist")
+    def test_radio_flex_fallback_completion_confirmation(
+        self,
+        mock_create_playlist,
+        mock_search_track,
+        mock_get_recommendations,
+        mock_resolve_seed,
+        mock_setup_logging,
+        mock_get_session,
+    ):
+        mock_get_session.return_value = MagicMock()
+        seed_mock = MagicMock(id="s1")
+        seed_mock.artist.name = "Artist A"
+        seed_mock.title = "Track A"
+        seed_mock.name = "Track A"
+        mock_resolve_seed.return_value = (seed_mock, "exact")
+
+        def side_effect(*args, **kwargs):
+            if kwargs.get("on_fallback"):
+                kwargs["on_fallback"]()
+            return [{"artist": "Rec Artist", "title": "Rec Track", "isrc": None}]
+        mock_get_recommendations.side_effect = side_effect
+        mock_search_track.return_value = MagicMock(id="t1", name="Rec Track")
+        mock_create_playlist.return_value = MagicMock(id="p1", name="Artist A - Track A Radio")
+
+        with self.assertLogs("root", level="INFO") as log_capture:
+            result = self.runner.invoke(
+                cli,
+                ["radio", "--artist", "Artist A", "--track", "Track A", "--gemini", "--flex"],
+                env={"GEMINI_API_KEY": "test-key"},
+            )
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Playlist 'Artist A - Track A Radio' created successfully (Standard tier utilized via flex fallback)!", result.output)
+        self.assertNotIn("Flex mode utilized", result.output)
+        log_text = "\n".join(log_capture.output)
+        self.assertIn("Gemini standard tier completed successfully for single-seed radio playlist (fallback from flex).", log_text)
+        self.assertNotIn("Gemini flex mode completed successfully", log_text)
+
+    @patch("src.services.tidal_service.get_session")
+    @patch("src.cli.main.setup_logging")
+    @patch("src.services.tidal_service.get_random_favorite_tracks")
+    @patch("pylast.LastFMNetwork")
+    @patch("src.services.gemini_service.get_recommendations")
+    @patch("src.services.tidal_service.search_for_track")
+    @patch("src.services.tidal_service.create_playlist")
+    def test_recommend_flex_fallback_completion_confirmation(
+        self,
+        mock_create_playlist,
+        mock_search_track,
+        mock_get_recommendations,
+        mock_lastfm,
+        mock_get_favorites,
+        mock_setup_logging,
+        mock_get_session,
+    ):
+        mock_get_session.return_value = MagicMock()
+        mock_track = MagicMock()
+        mock_track.name = "Track 1"
+        mock_track.artist.name = "Artist 1"
+        mock_get_favorites.return_value = [mock_track]
+
+        def side_effect(*args, **kwargs):
+            if kwargs.get("on_fallback"):
+                kwargs["on_fallback"]()
+            return [{"artist": "Rec Artist", "title": "Rec Track", "isrc": None}]
+        mock_get_recommendations.side_effect = side_effect
+        mock_search_track.return_value = MagicMock(id="t1", name="Rec Track")
+        mock_create_playlist.return_value = MagicMock(id="p1", name="Discovery")
+
+        with self.assertLogs("root", level="INFO") as log_capture:
+            result = self.runner.invoke(
+                cli,
+                ["recommend", "--gemini", "--flex"],
+                env={"GEMINI_API_KEY": "test-key"},
+            )
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("created successfully (Standard tier utilized via flex fallback)!", result.output)
+        self.assertNotIn("Flex mode utilized", result.output)
+        log_text = "\n".join(log_capture.output)
+        self.assertIn("Gemini standard tier completed successfully for playlist creation (fallback from flex).", log_text)
+        self.assertNotIn("Gemini flex mode completed successfully", log_text)
+
 
 if __name__ == '__main__':
     unittest.main()
