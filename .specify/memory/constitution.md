@@ -1,8 +1,8 @@
 <!--
 Sync Impact Report:
-- **Version Change**: 1.11.0 → 1.12.0
+- **Version Change**: 1.12.0 → 1.13.0
 - **Modified Principles**: None
-- **Added Principles / Sections**: Principle XI (Human Readability & Inline Intent Documentation), Quality Gate on Human Readability & Inline Comments, Compliance Review Expectations update
+- **Added Principles / Sections**: Quality Gate on Gemini SDK Idioms & Schema Standards, Compliance Review Expectations update
 - **Removed Sections**: None
 - **Templates requiring updates**: None
 - **Follow-up TODOs**: None
@@ -163,6 +163,11 @@ the creation of new playlists to enrich the user's listening experience.
 - **Zero ISRC Hallucination**: AI prompts, schemas, and completion handlers MUST
   strictly comply with Principle VIII by prohibiting synthetic ISRC generation and
   requiring string-based catalog search for track resolution.
+- **Gemini SDK Idioms & Schema Standards**: Before planning or implementing changes to
+  Gemini-driven services, contributors and agents MUST consult the project's Gemini skill
+  to ensure compatibility with `google-genai`, adhere strictly to Principle VI (Cost Efficiency)
+  and Principle VIII (Zero ISRC Hallucination), enforce structured output schemas via Pydantic,
+  and verify upstream SDK capabilities per Principle X.
 - **CLI Ergonomics & Sensible Defaults**: New commands and CLI modifications MUST
   prioritize user ergonomics. Commands SHOULD support concise primary names with aliasing
   for discoverability, provide intelligent defaults for optional parameters to avoid
@@ -212,7 +217,8 @@ Compliance Review Expectations:
   could be provided, invent unknown facts without authoritative verification,
   overlook available upstream functionality in critical client libraries like `tidalapi`
   when planning new integrations, fail to update required dependency version files
-  (`pyproject.toml`) when upstream capabilities are adopted, or prompt/rely on AI-generated
-  ISRC codes.
+  (`pyproject.toml`) when upstream capabilities are adopted, prompt/rely on AI-generated
+  ISRC codes, or modify Gemini-driven services without consulting the project's Gemini skill
+  and adhering to `google-genai` idioms and structured schema standards.
 
-**Version**: 1.12.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-09-21
+**Version**: 1.13.0 | **Ratified**: 2026-01-15 | **Last Amended**: 2026-10-09
