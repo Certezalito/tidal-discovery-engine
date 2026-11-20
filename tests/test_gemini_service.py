@@ -178,7 +178,7 @@ class TestGeminiService(unittest.TestCase):
 
     @patch("src.services.gemini_service._read_dotenv_values", return_value={})
     @patch("src.services.gemini_service.genai.Client")
-    def test_get_recommendations_uses_interactions_api_with_store_false_and_medium_thinking(
+    def test_get_recommendations_uses_interactions_api_with_store_false_and_neon_low_thinking(
         self,
         mock_client_class,
         _mock_dotenv,
@@ -201,10 +201,10 @@ class TestGeminiService(unittest.TestCase):
         mock_client.interactions.create.assert_called_once()
 
         _, kwargs = mock_client.interactions.create.call_args
-        self.assertEqual(kwargs["model"], "gemini-flash-latest")
+        self.assertEqual(kwargs["model"], "gemini-4-neon")
         self.assertIs(kwargs["store"], False)
         self.assertEqual(kwargs["service_tier"], "standard")
-        self.assertEqual(kwargs["generation_config"], {"thinking_level": "medium"})
+        self.assertEqual(kwargs["generation_config"], {"thinking_level": "low"})
         self.assertNotIn("temperature", kwargs["generation_config"])
         self.assertNotIn("top_p", kwargs["generation_config"])
         self.assertNotIn("top_k", kwargs["generation_config"])
