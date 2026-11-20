@@ -11,8 +11,11 @@ from google import genai
 from pydantic import BaseModel, Field, ValidationError
 
 
-# Built-in default model retained per FR-006 so users automatically track Google's latest Flash release.
+# Built-in default models:
+# - `recommend` & `radio`: gemini-4-neon (frontier music curation) with thinking_level="low"
+# - `organize`: gemini-flash-latest (fast, cost-efficient batch genre classification)
 DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
+DEFAULT_RECOMMENDATION_MODEL = "gemini-4-neon"
 # Interactions API v1beta is required for dynamic aliases (gemini-flash-latest), preview models, and flex tier.
 DEFAULT_GEMINI_API_VERSION = "v1beta"
 _DEFAULT_WARNING_EMITTED = False
@@ -29,10 +32,10 @@ DEFAULT_STANDARD_TIMEOUT_MS = 120_000  # 2 minutes default interactive timeout
 DEFAULT_FLEX_TIMEOUT_SECONDS = 900  # 15 minutes default flex tier turnaround timeout
 DEFAULT_FLEX_HEARTBEAT_INTERVAL_SECONDS = 15.0  # Periodic heartbeat interval during flex queue waiting
 
-# Task-tailored thinking levels on current-generation Gemini models (FR-016, Principle VI).
-# Creative music curation benefits from deeper reasoning ("medium"), whereas high-volume batch
-# genre classification targets "minimal" thinking to minimize hidden thought tokens and latency.
-RECOMMENDATION_THINKING_LEVEL = "medium"
+# Task-tailored thinking levels on current-generation Gemini models (Principle VI).
+# `recommend` & `radio` use gemini-4-neon with "low" thinking for fast, cost-efficient curation;
+# `organize` targets "minimal" thinking (proactively "low" on models that reject "minimal").
+RECOMMENDATION_THINKING_LEVEL = "low"
 CLASSIFICATION_THINKING_LEVEL = "minimal"
 CLASSIFICATION_THINKING_FALLBACK_LEVEL = "low"
 
@@ -333,10 +336,14 @@ def _normalize_model_name(value):
     return normalized
 
 
-def _substitute_deprecated_model(model_name: str, env_var_name: str) -> str:
+def _substitute_deprecated_model(
+    model_name: str,
+    env_var_name: str,
+    replacement_model: str = DEFAULT_GEMINI_MODEL,
+) -> str:
     """
     Replaces deprecated legacy Gemini model families (gemini-1.5-*, gemini-2.0-*, gemini-2.5-*)
-    with DEFAULT_GEMINI_MODEL and logs a warning so unattended schedules keep running (FR-007).
+    with `replacement_model` and logs a warning so unattended schedules keep running (FR-007).
     """
     if _DEPRECATED_LEGACY_MODEL_PATTERN.match(model_name):
         logging.warning(
@@ -344,10 +351,10 @@ def _substitute_deprecated_model(model_name: str, env_var_name: str) -> str:
             "Please update your configuration to a current model or leave %s blank.",
             env_var_name,
             model_name,
-            DEFAULT_GEMINI_MODEL,
+            replacement_model,
             env_var_name,
         )
-        return DEFAULT_GEMINI_MODEL
+        return replacement_model
     return model_name
 
 
@@ -397,6 +404,24 @@ def _resolve_fallback_model(dotenv_config):
     if not normalized:
         return None
     return _substitute_deprecated_model(normalized, "GEMINI_FALLBACK_MODEL")
+
+
+def _resolve_recommendation_model(dotenv_config):
+    """
+    Resolves the Gemini model for song recommendations (`tde recommend` and `tde radio`).
+    Precedence: GEMINI_MODEL (env -> .env) -> DEFAULT_RECOMMENDATION_MODEL (gemini-4-neon).
+    Automatically substitutes deprecated legacy 1.5/2.0/2.5 models with DEFAULT_RECOMMENDATION_MODEL.
+    """
+    raw_value, source = _resolve_from_env_then_dotenv("GEMINI_MODEL", dotenv_config)
+    normalized = _normalize_model_name(raw_value)
+    if normalized:
+        resolved = _substitute_deprecated_model(
+            normalized,
+            "GEMINI_MODEL",
+            replacement_model=DEFAULT_RECOMMENDATION_MODEL,
+        )
+        return resolved, source
+    return DEFAULT_RECOMMENDATION_MODEL, "default"
 
 
 def _resolve_organize_model(dotenv_config):
@@ -918,7 +943,7 @@ def get_recommendations(
     logging.info("Gemini Service: specific prompt style=%s", "Deep Cuts" if shuffle else "Standard")
 
     dotenv_config = _read_dotenv_values()
-    primary_model, model_source = _resolve_primary_model(dotenv_config)
+    primary_model, model_source = _resolve_recommendation_model(dotenv_config)
     fallback_model = _resolve_fallback_model(dotenv_config)
     logging.info(
         "Gemini model resolution: primary='%s' source=%s fallback=%s",
