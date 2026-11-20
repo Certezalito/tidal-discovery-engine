@@ -35,6 +35,7 @@ A command-line tool that generates Tidal playlists with recommended tracks using
     - Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey). Required only if you use `--gemini` or `organize`. All Gemini requests use Google's current **Interactions API** in stateless mode (`store=false`, so your listening history is not stored on Google's servers).
     - `GEMINI_MODEL` is optional. Resolution order: exported environment variable → `.env` value → built-in default (`gemini-flash-latest`). Setting to `latest`, `auto`, or leaving blank automatically tracks Google's latest Flash model. If a deprecated legacy model (`gemini-1.5-*`, `gemini-2.0-*`, or `gemini-2.5-*`) is configured, the CLI logs a warning and automatically substitutes `gemini-flash-latest` so scheduled jobs keep running.
     - `GEMINI_FALLBACK_MODEL` is optional. Used only when the primary model is unavailable or not found (also auto-substitutes deprecated `1.5`/`2.0`/`2.5` identifiers with a warning).
+    - `GEMINI_ORGANIZE_MODEL` is optional. Overrides the Gemini model used specifically by `tde organize` (resolution order: `GEMINI_ORGANIZE_MODEL` → `GEMINI_MODEL` → `gemini-flash-latest`). Batch classification uses a compact index-keyed JSON payload (`{id, p, s}`) so Gemini never echoes back artist names, track titles, or ISRCs, significantly reducing output token cost.
     - **Task-Tailored Reasoning Effort**: Creative recommendation commands (`recommend --gemini` and `radio --gemini`) use `medium` thinking effort for deeper musical curation, while high-volume batch library classification (`organize`) targets `minimal` thinking effort (automatically stepping up to `low` on models that do not support `minimal`, such as `gemini-3.8-flash`) to keep token usage low.
     - `GEMINI_SERVICE_TIER` is optional (`standard` or `flex`, default: `standard`). When set to `flex`, requests route through Google Gemini's flex service tier for 50% lower token pricing (turnaround is variable, typically 1–15 minutes). Overridden by explicit `--flex` or `--no-flex` CLI flags.
     - `GEMINI_FLEX_TIMEOUT_SECONDS` is optional (positive integer, default: `900` seconds / 15 minutes). Sets client HTTP timeout for flex tier requests.
@@ -443,7 +444,7 @@ tidal-discovery-engine/
 │       ├── genre_organizer_service.py # Multi-genre analysis & playlist sync
 │       ├── lastfm_service.py          # Last.fm similar tracks discovery
 │       └── tidal_service.py           # Tidal API session & playlist management
-├── tests/                      # Automated test suite (all 193 tests pass)
+├── tests/                      # Automated test suite (all 195 tests pass)
 ├── data/                       # Local SQLite databases (gitignored runtime data)
 ├── .env.example                # Template for environment variables and API keys
 ├── pyproject.toml              # Dependencies and project metadata
