@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field, ValidationError
 
 # Built-in default model retained per FR-006 so users automatically track Google's latest Flash release.
 DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
+# Interactions API v1beta is required for dynamic aliases (gemini-flash-latest), preview models, and flex tier.
+DEFAULT_GEMINI_API_VERSION = "v1beta"
 _DEFAULT_WARNING_EMITTED = False
 
 # Recovery retry settings for standard and flex service tiers.
@@ -88,20 +90,41 @@ class GenreClassificationResult(BaseModel):
     genre: str | None = None  # Legacy alias preserved for backward compatibility with GenreCacheService
 
 
+class CompactGenreClassification(BaseModel):
+    """
+    Token-optimized wire schema for Gemini batch genre classification (Principle VI).
+    Uses short field names and track index IDs instead of echoing artist, title, and ISRC
+    back from the model; Python maps each `id` back to the authoritative input track metadata.
+    """
+
+    id: int = Field(description="Zero-based index of the input song")
+    p: str | None = Field(
+        default=None,
+        description="Single specific primary genre (avoid generic umbrella labels like Rock/Pop/Electronic when specific styles apply)",
+    )
+    s: list[str] = Field(
+        default_factory=list,
+        description="Up to 3 specific sub-genres or micro-genres, excluding broad umbrella categories",
+    )
+
+
 class GenreClassificationList(BaseModel):
     """Top-level JSON object wrapper required by the Interactions API response_format schema contract."""
 
-    classifications: list[GenreClassificationResult] = Field(default_factory=list)
+    classifications: list[CompactGenreClassification] = Field(default_factory=list)
 
 
 def _create_genai_client(api_key: str, timeout_ms: int):
     """
-    Creates a google-genai Client configured with the resolved request timeout in milliseconds.
-    In the Interactions API, client-side HTTP timeouts are set via http_options={"timeout": timeout_ms}
-    at client initialization time.
+    Creates a google-genai Client configured with the resolved request timeout in milliseconds
+    and the v1beta Interactions API version (required for aliases like gemini-flash-latest,
+    preview models, and preview flex inference).
     """
     try:
-        return genai.Client(api_key=api_key, http_options={"timeout": timeout_ms})
+        return genai.Client(
+            api_key=api_key,
+            http_options={"timeout": timeout_ms, "api_version": DEFAULT_GEMINI_API_VERSION},
+        )
     except Exception as exc:
         logging.error("Failed to initialize Gemini Client: %s", exc)
         raise ValueError("Invalid Gemini API Configuration") from exc
@@ -375,6 +398,20 @@ def _resolve_fallback_model(dotenv_config):
     return _substitute_deprecated_model(normalized, "GEMINI_FALLBACK_MODEL")
 
 
+def _resolve_organize_model(dotenv_config):
+    """
+    Resolves the Gemini model for library genre organization (`tde organize`).
+    Precedence: GEMINI_ORGANIZE_MODEL (env -> .env) -> GEMINI_MODEL (env -> .env) -> gemini-flash-latest.
+    Automatically substitutes deprecated legacy 1.5/2.0/2.5 models with DEFAULT_GEMINI_MODEL.
+    """
+    raw_value, source = _resolve_from_env_then_dotenv("GEMINI_ORGANIZE_MODEL", dotenv_config)
+    normalized = _normalize_model_name(raw_value)
+    if normalized:
+        resolved = _substitute_deprecated_model(normalized, "GEMINI_ORGANIZE_MODEL")
+        return resolved, source
+    return _resolve_primary_model(dotenv_config)
+
+
 def _resolve_flex_timeout_seconds(dotenv_config):
     """
     Resolves client timeout in seconds for Gemini flex tier requests (Principle I & V).
@@ -587,9 +624,10 @@ def _classify_response_state(interaction):
     return "usable", normalized
 
 
-def _parse_genre_classification_interaction(interaction):
+def _parse_genre_classification_interaction(interaction, tracks: list[dict] | None = None):
     """
-    Validates an Interaction response for track genre classification.
+    Validates a compact index-keyed Interaction response for track genre classification and maps
+    each returned `id` back onto the authoritative input track metadata (`artist`, `title`, `isrc`).
     Returns (state, payload) where state is 'usable', 'unusable-blocked', or 'unusable-empty'.
     """
     terminal_failure = _check_interaction_terminal_failure(interaction)
@@ -608,23 +646,51 @@ def _parse_genre_classification_interaction(interaction):
     if not parsed_wrapper.classifications:
         return "unusable-empty", "empty genre classification list"
 
-    results = []
-    for item in parsed_wrapper.classifications:
-        row = item.model_dump()
-        primary_genre = row.get("primary_genre") or row.get("genre")
-        if primary_genre:
-            primary_genre = str(primary_genre).strip()
-        sub_genres_raw = row.get("sub_genres") or []
-        if not isinstance(sub_genres_raw, list):
-            sub_genres_raw = [str(sub_genres_raw)] if sub_genres_raw else []
+    def _clean_item(item: CompactGenreClassification) -> tuple[str | None, list[str]]:
+        primary_genre = item.p.strip() if isinstance(item.p, str) and item.p.strip() else None
+        sub_genres_raw = item.s or []
         # Clean and cap sub-genres to at most 3 items per spec (FR-005).
         sub_genres = [str(s).strip() for s in sub_genres_raw if s and str(s).strip()][:3]
+        return primary_genre, sub_genres
 
-        row["primary_genre"] = primary_genre
-        row["genre"] = primary_genre  # Legacy alias retained for GenreCacheService SQLite rows
-        row["sub_genres"] = sub_genres
-        results.append(row)
+    # When input tracks are supplied, map by zero-based index so omitted or out-of-order IDs
+    # can never shift classifications onto the wrong track in downstream zip() loops.
+    if tracks is not None:
+        by_id: dict[int, tuple[str | None, list[str]]] = {}
+        for item in parsed_wrapper.classifications:
+            if 0 <= item.id < len(tracks) and item.id not in by_id:
+                by_id[item.id] = _clean_item(item)
 
+        if not by_id:
+            return "unusable-empty", "genre classification IDs did not match any input tracks"
+
+        results = []
+        for idx, track in enumerate(tracks):
+            primary_genre, sub_genres = by_id.get(idx, (None, []))
+            results.append(
+                {
+                    "artist": track.get("artist"),
+                    "title": track.get("title"),
+                    "isrc": track.get("isrc"),
+                    "primary_genre": primary_genre,
+                    "genre": primary_genre,  # Legacy alias retained for GenreCacheService SQLite rows
+                    "sub_genres": sub_genres,
+                }
+            )
+        return "usable", results
+
+    # Fallback when called directly without tracks context (e.g. isolated parser tests).
+    results = []
+    for item in parsed_wrapper.classifications:
+        primary_genre, sub_genres = _clean_item(item)
+        results.append(
+            {
+                "id": item.id,
+                "primary_genre": primary_genre,
+                "genre": primary_genre,
+                "sub_genres": sub_genres,
+            }
+        )
     return "usable", results
 
 
@@ -997,28 +1063,30 @@ def classify_tracks_genres(
     Returns:
         list[dict]: A list of dicts with keys 'artist', 'title', 'isrc', 'genre', 'primary_genre', 'sub_genres'.
     """
-    descriptions = []
-    for t in tracks:
-        isrc_part = f" (ISRC: {t.get('isrc')})" if t.get("isrc") else ""
-        descriptions.append(f"- {t.get('artist')} - {t.get('title')}{isrc_part}")
-
+    # Use compact zero-based indices and omit ISRCs from the prompt (Principle VI & VIII).
+    # Authoritative artist, title, and ISRC values are re-attached locally by track index.
+    descriptions = [
+        f"{idx}: {t.get('artist')} - {t.get('title')}"
+        for idx, t in enumerate(tracks)
+    ]
     seeds_text = "\n".join(descriptions)
 
     full_prompt = (
-        "I will provide a list of songs.\n"
-        "For each song:\n"
-        "1. Identify the 'primary_genre': exactly ONE specific, recognized musical genre that best captures the core identity of the track.\n"
-        "   - Do NOT use overly broad, generic umbrella terms like 'Rock', 'Pop', 'Alternative', 'Music', or 'Electronic' if a more descriptive primary genre applies (e.g., use 'Indie Rock', 'Synthpop', 'Math Rock', 'Deep House').\n"
-        "2. Identify 'sub_genres': up to 3 specific sub-genres or micro-genres that accurately characterize the track's distinctive elements (e.g., 'Dance-Punk', 'Post-Punk Revival', 'Art Punk').\n"
-        "   - Strictly EXCLUDE broad umbrella categories from sub_genres.\n"
-        "   - If no distinctive sub-genres apply, return an empty list.\n\n"
-        "Return the output strictly in the requested JSON structure under 'classifications'.\n"
-        "Do not invent genres; use established standard music genres.\n\n"
+        "Classify each numbered song below into established music genres.\n"
+        "For each song index `id`:\n"
+        "1. `p`: exactly ONE specific primary genre (do NOT use generic umbrella terms like 'Rock', 'Pop', 'Alternative', 'Music', or 'Electronic' when a specific genre applies; e.g. 'Indie Rock', 'Synthpop', 'Math Rock', 'Deep House').\n"
+        "2. `s`: up to 3 specific sub-genres/micro-genres (strictly exclude broad umbrella categories; empty list if none apply).\n\n"
+        "Return ONLY JSON under `classifications` with `{id, p, s}` entries (do not repeat artist or title).\n\n"
         f"SONGS:\n{seeds_text}"
     )
 
     dotenv_config = _read_dotenv_values()
-    primary_model, _ = _resolve_primary_model(dotenv_config)
+    primary_model, model_source = _resolve_organize_model(dotenv_config)
+    logging.info(
+        "Gemini organize model resolution: model='%s' source=%s",
+        primary_model,
+        model_source,
+    )
 
     # Resolve service tier and timeout BEFORE instantiating genai.Client (Principle VI, FR-012).
     tier, source, timeout_ms = _resolve_service_tier(flex, dotenv_config)
@@ -1066,7 +1134,7 @@ def classify_tracks_genres(
             with _flex_heartbeat(tier, timeout_ms):
                 interaction = client.interactions.create(**request_kwargs)
 
-            state, payload = _parse_genre_classification_interaction(interaction)
+            state, payload = _parse_genre_classification_interaction(interaction, tracks=tracks)
             if state == "usable":
                 logging.info("Gemini track classifications retrieved successfully (tier='%s').", tier)
                 return payload

@@ -52,6 +52,7 @@ class TestGeminiService(unittest.TestCase):
         for var in [
             "GEMINI_MODEL",
             "GEMINI_FALLBACK_MODEL",
+            "GEMINI_ORGANIZE_MODEL",
             "GEMINI_SERVICE_TIER",
             "GEMINI_FLEX_FALLBACK_STANDARD",
             "GEMINI_SERVICE_TIER_FALLBACK",
@@ -192,7 +193,10 @@ class TestGeminiService(unittest.TestCase):
         results = gemini_service.get_recommendations("test-key", [seed_track], 5, shuffle=True)
 
         self.assertEqual(results, [{"artist": "Burial", "title": "Untrue"}])
-        mock_client_class.assert_called_once_with(api_key="test-key", http_options={"timeout": 120_000})
+        mock_client_class.assert_called_once_with(
+            api_key="test-key",
+            http_options={"timeout": 120_000, "api_version": "v1beta"},
+        )
         mock_client.models.generate_content.assert_not_called()
         mock_client.interactions.create.assert_called_once()
 
@@ -394,6 +398,31 @@ class TestGeminiService(unittest.TestCase):
     # US2: Interactions API Genre Classification Tests
     # ------------------------------------------------------------------
 
+    def test_resolve_organize_model_precedence_and_deprecation(self):
+        # Defaults to gemini-flash-latest when neither GEMINI_ORGANIZE_MODEL nor GEMINI_MODEL is set
+        with patch.dict("os.environ", {}, clear=True):
+            model, source = gemini_service._resolve_organize_model({})
+            self.assertEqual(model, "gemini-flash-latest")
+            self.assertEqual(source, "default")
+
+        # GEMINI_ORGANIZE_MODEL overrides GEMINI_MODEL
+        with patch.dict(
+            "os.environ",
+            {"GEMINI_MODEL": "gemini-4-neon", "GEMINI_ORGANIZE_MODEL": "gemini-flash-latest"},
+            clear=True,
+        ):
+            model, source = gemini_service._resolve_organize_model({})
+            self.assertEqual(model, "gemini-flash-latest")
+            self.assertEqual(source, "env")
+
+        # Deprecated legacy GEMINI_ORGANIZE_MODEL auto-substitutes gemini-flash-latest with warning
+        with patch.dict("os.environ", {"GEMINI_ORGANIZE_MODEL": "gemini-2.0-flash"}, clear=True):
+            with self.assertLogs(level="WARNING") as cm:
+                model, source = gemini_service._resolve_organize_model({})
+            self.assertEqual(model, "gemini-flash-latest")
+            self.assertEqual(source, "env")
+            self.assertTrue(any("GEMINI_ORGANIZE_MODEL" in msg and "gemini-2.0-flash" in msg for msg in cm.output))
+
     @patch("src.services.gemini_service._read_dotenv_values", return_value={})
     @patch("src.services.gemini_service.genai.Client")
     def test_classify_tracks_genres_uses_interactions_api_with_store_false_and_minimal_thinking(
@@ -405,8 +434,8 @@ class TestGeminiService(unittest.TestCase):
         mock_client_class.return_value = mock_client
         mock_client.interactions.create.return_value = self._genre_interaction(
             [
-                {"artist": "A", "title": "1", "isrc": "isrc1", "primary_genre": "Indie Rock", "sub_genres": []},
-                {"artist": "B", "title": "2", "isrc": "isrc2", "primary_genre": None, "sub_genres": []},
+                {"id": 0, "p": "Indie Rock", "s": []},
+                {"id": 1, "p": None, "s": []},
             ]
         )
 
@@ -418,8 +447,13 @@ class TestGeminiService(unittest.TestCase):
         results = gemini_service.classify_tracks_genres("test-key", tracks)
 
         self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["artist"], "A")
+        self.assertEqual(results[0]["title"], "1")
+        self.assertEqual(results[0]["isrc"], "isrc1")
         self.assertEqual(results[0]["primary_genre"], "Indie Rock")
         self.assertEqual(results[0]["genre"], "Indie Rock")
+        self.assertEqual(results[1]["artist"], "B")
+        self.assertEqual(results[1]["isrc"], "isrc2")
         self.assertIsNone(results[1]["genre"])
 
         mock_client.models.generate_content.assert_not_called()
@@ -428,10 +462,49 @@ class TestGeminiService(unittest.TestCase):
         self.assertIs(kwargs["store"], False)
         self.assertEqual(kwargs["generation_config"], {"thinking_level": "minimal"})
         self.assertNotIn("temperature", kwargs["generation_config"])
+        # Compact numbered prompt must not echo ISRCs to Gemini (Principle VI & VIII).
+        self.assertIn("0: A - 1", kwargs["input"])
+        self.assertIn("1: B - 2", kwargs["input"])
+        self.assertNotIn("isrc1", kwargs["input"])
+        self.assertNotIn("isrc2", kwargs["input"])
         self.assertEqual(
             kwargs["response_format"]["schema"],
             gemini_service.GenreClassificationList.model_json_schema(),
         )
+
+    @patch("src.services.gemini_service._read_dotenv_values", return_value={})
+    @patch("src.services.gemini_service.genai.Client")
+    def test_classify_tracks_genres_maps_out_of_order_and_missing_ids_safely(
+        self,
+        mock_client_class,
+        _mock_dotenv,
+    ):
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        # Returned out-of-order, with track 1 omitted and an invalid id=99 ignored
+        mock_client.interactions.create.return_value = self._genre_interaction(
+            [
+                {"id": 2, "p": "Modal Jazz", "s": ["Cool Jazz"]},
+                {"id": 99, "p": "Bogus", "s": []},
+                {"id": 0, "p": "Math Rock", "s": ["Dance-Punk"]},
+            ]
+        )
+
+        tracks = [
+            {"artist": "Foals", "title": "Tron", "isrc": "ISRC0"},
+            {"artist": "Unknown", "title": "Skipped", "isrc": "ISRC1"},
+            {"artist": "Miles Davis", "title": "So What", "isrc": "ISRC2"},
+        ]
+
+        results = gemini_service.classify_tracks_genres("test-key", tracks)
+        self.assertEqual(len(results), 3)
+        self.assertEqual(results[0]["artist"], "Foals")
+        self.assertEqual(results[0]["primary_genre"], "Math Rock")
+        self.assertEqual(results[1]["artist"], "Unknown")
+        self.assertIsNone(results[1]["primary_genre"])
+        self.assertEqual(results[1]["sub_genres"], [])
+        self.assertEqual(results[2]["artist"], "Miles Davis")
+        self.assertEqual(results[2]["primary_genre"], "Modal Jazz")
 
     @patch("src.services.gemini_service._read_dotenv_values", return_value={})
     @patch("src.services.gemini_service.genai.Client")
@@ -443,7 +516,7 @@ class TestGeminiService(unittest.TestCase):
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
         mock_client.interactions.create.return_value = self._genre_interaction(
-            [{"artist": "A", "title": "1", "primary_genre": "Synthpop", "sub_genres": ["Electropop"]}]
+            [{"id": 0, "p": "Synthpop", "s": ["Electropop"]}]
         )
 
         with patch.dict("os.environ", {"GEMINI_MODEL": "gemini-3.8-flash"}, clear=True):
@@ -467,7 +540,7 @@ class TestGeminiService(unittest.TestCase):
             status_code=400,
         )
         ok_interaction = self._genre_interaction(
-            [{"artist": "Foals", "title": "Tron", "primary_genre": "Math Rock", "sub_genres": ["Dance-Punk"]}]
+            [{"id": 0, "p": "Math Rock", "s": ["Dance-Punk"]}]
         )
         mock_client.interactions.create.side_effect = [bad_thinking_err, ok_interaction]
 
@@ -495,9 +568,9 @@ class TestGeminiService(unittest.TestCase):
 
         mock_client.interactions.create.return_value = self._genre_interaction(
             [
-                {"artist": "Miles Davis", "title": "Teardrop", "isrc": "1", "primary_genre": "Electronic"},
-                {"artist": "Metallica", "title": "Enter Sandman", "isrc": "2", "primary_genre": "Metal"},
-                {"artist": "Beethoven", "title": "So What", "isrc": "3", "primary_genre": "Classical"},
+                {"id": 0, "p": "Electronic", "s": []},
+                {"id": 1, "p": "Metal", "s": []},
+                {"id": 2, "p": "Classical", "s": []},
             ]
         )
 
@@ -521,11 +594,9 @@ class TestGeminiService(unittest.TestCase):
         mock_client.interactions.create.return_value = self._genre_interaction(
             [
                 {
-                    "artist": "Foals",
-                    "title": "Tron",
-                    "isrc": "GBAHT0900329",
-                    "primary_genre": "Math Rock",
-                    "sub_genres": ["Dance-Punk", "Post-Punk Revival", "Art Punk", "Extra Ignored"],
+                    "id": 0,
+                    "p": "Math Rock",
+                    "s": ["Dance-Punk", "Post-Punk Revival", "Art Punk", "Extra Ignored"],
                 }
             ]
         )
@@ -534,6 +605,9 @@ class TestGeminiService(unittest.TestCase):
         results = gemini_service.classify_tracks_genres("test-key", tracks)
 
         self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["artist"], "Foals")
+        self.assertEqual(results[0]["title"], "Tron")
+        self.assertEqual(results[0]["isrc"], "GBAHT0900329")
         self.assertEqual(results[0]["primary_genre"], "Math Rock")
         self.assertEqual(results[0]["genre"], "Math Rock")
         self.assertEqual(results[0]["sub_genres"], ["Dance-Punk", "Post-Punk Revival", "Art Punk"])
@@ -653,7 +727,10 @@ class TestGeminiService(unittest.TestCase):
         result = gemini_service.get_recommendations("test-key", [seed_track], 1, flex=True)
 
         self.assertEqual(len(result), 1)
-        mock_client_class.assert_called_once_with(api_key="test-key", http_options={"timeout": 900_000})
+        mock_client_class.assert_called_once_with(
+            api_key="test-key",
+            http_options={"timeout": 900_000, "api_version": "v1beta"},
+        )
         mock_client.interactions.create.assert_called_once()
         _, kwargs = mock_client.interactions.create.call_args
         self.assertEqual(kwargs["service_tier"], "flex")
@@ -665,14 +742,17 @@ class TestGeminiService(unittest.TestCase):
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
         mock_client.interactions.create.return_value = self._genre_interaction(
-            [{"artist": "A", "title": "1", "primary_genre": "Indie Rock"}]
+            [{"id": 0, "p": "Indie Rock", "s": []}]
         )
 
         tracks = [{"artist": "A", "title": "1"}]
         results = gemini_service.classify_tracks_genres("test-key", tracks, flex=True)
 
         self.assertEqual(len(results), 1)
-        mock_client_class.assert_called_once_with(api_key="test-key", http_options={"timeout": 900_000})
+        mock_client_class.assert_called_once_with(
+            api_key="test-key",
+            http_options={"timeout": 900_000, "api_version": "v1beta"},
+        )
         mock_client.interactions.create.assert_called_once()
         _, kwargs = mock_client.interactions.create.call_args
         self.assertEqual(kwargs["service_tier"], "flex")
@@ -873,7 +953,7 @@ class TestGeminiService(unittest.TestCase):
         mock_client_class.return_value = mock_client
         server_error = self._FakeInteractionsStatusError("High demand spike", status_code=503)
         mock_response = self._genre_interaction(
-            [{"artist": "Artist A", "title": "Song 1", "primary_genre": "Post-Punk"}]
+            [{"id": 0, "p": "Post-Punk", "s": []}]
         )
         mock_client.interactions.create.side_effect = [server_error, mock_response]
 
@@ -996,8 +1076,14 @@ class TestGeminiService(unittest.TestCase):
 
         # Verify initial flex client used 900s timeout and fallback standard client used 120s timeout.
         self.assertEqual(mock_client_class.call_count, 2)
-        self.assertEqual(mock_client_class.call_args_list[0].kwargs["http_options"], {"timeout": 900_000})
-        self.assertEqual(mock_client_class.call_args_list[1].kwargs["http_options"], {"timeout": 120_000})
+        self.assertEqual(
+            mock_client_class.call_args_list[0].kwargs["http_options"],
+            {"timeout": 900_000, "api_version": "v1beta"},
+        )
+        self.assertEqual(
+            mock_client_class.call_args_list[1].kwargs["http_options"],
+            {"timeout": 120_000, "api_version": "v1beta"},
+        )
 
         _, last_kwargs = mock_client.interactions.create.call_args_list[-1]
         self.assertEqual(last_kwargs["service_tier"], "standard")
@@ -1018,7 +1104,7 @@ class TestGeminiService(unittest.TestCase):
         mock_client_class.return_value = mock_client
         server_error = self._FakeInteractionsStatusError("High demand spike", status_code=503)
         standard_response = self._genre_interaction(
-            [{"artist": "Artist A", "title": "Song 1", "primary_genre": "Synthpop"}]
+            [{"id": 0, "p": "Synthpop", "s": []}]
         )
         mock_client.interactions.create.side_effect = [server_error] * 6 + [standard_response]
 
@@ -1038,8 +1124,14 @@ class TestGeminiService(unittest.TestCase):
         self.assertEqual(results[0]["primary_genre"], "Synthpop")
         self.assertEqual(mock_client.interactions.create.call_count, 7)
         on_fallback_cb.assert_called_once()
-        self.assertEqual(mock_client_class.call_args_list[0].kwargs["http_options"], {"timeout": 900_000})
-        self.assertEqual(mock_client_class.call_args_list[1].kwargs["http_options"], {"timeout": 120_000})
+        self.assertEqual(
+            mock_client_class.call_args_list[0].kwargs["http_options"],
+            {"timeout": 900_000, "api_version": "v1beta"},
+        )
+        self.assertEqual(
+            mock_client_class.call_args_list[1].kwargs["http_options"],
+            {"timeout": 120_000, "api_version": "v1beta"},
+        )
 
         _, last_kwargs = mock_client.interactions.create.call_args_list[-1]
         self.assertEqual(last_kwargs["service_tier"], "standard")
