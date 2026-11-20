@@ -9,8 +9,9 @@ dependencies = [
     "tidalapi",
     "pylast",
     "python-dotenv",
-    # google-genai>=1.70.0 required for native service_tier and HttpOptions(timeout=...) support (Principle X)
-    "google-genai>=1.70.0",
+    # google-genai>=2.25.0 required for Gemini Interactions API (client.interactions.create),
+    # steps schema (Api-Revision: 2026-05-20), output_text helper, service_tier, and thinking_level (Principle X)
+    "google-genai>=2.25.0",
 ]
 
 [project.scripts]

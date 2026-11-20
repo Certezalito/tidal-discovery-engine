@@ -32,10 +32,11 @@ A command-line tool that generates Tidal playlists with recommended tracks using
     ```
 
     - Get a Last.fm API key from the [Last.fm API account page](https://www.last.fm/api/account/create).
-    - Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey). Required only if you use `--gemini`.
-    - `GEMINI_MODEL` is optional. Resolution order: exported environment variable → `.env` value → built-in default (`gemini-flash-latest`). Setting to `latest` or leaving blank automatically uses Google's latest Flash model.
-    - `GEMINI_FALLBACK_MODEL` is optional. Used only when the primary model is unavailable or not found.
-    - `GEMINI_SERVICE_TIER` is optional (`standard` or `flex`, default: `standard`). When set to `flex`, requests route through Google Gemini's flex service tier for 50% lower token pricing (turnaround turnaround is variable, typically 1–15 minutes). Overridden by explicit `--flex` or `--no-flex` CLI flags.
+    - Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey). Required only if you use `--gemini` or `organize`. All Gemini requests use Google's current **Interactions API** in stateless mode (`store=false`, so your listening history is not stored on Google's servers).
+    - `GEMINI_MODEL` is optional. Resolution order: exported environment variable → `.env` value → built-in default (`gemini-flash-latest`). Setting to `latest`, `auto`, or leaving blank automatically tracks Google's latest Flash model. If a deprecated legacy model (`gemini-1.5-*`, `gemini-2.0-*`, or `gemini-2.5-*`) is configured, the CLI logs a warning and automatically substitutes `gemini-flash-latest` so scheduled jobs keep running.
+    - `GEMINI_FALLBACK_MODEL` is optional. Used only when the primary model is unavailable or not found (also auto-substitutes deprecated `1.5`/`2.0`/`2.5` identifiers with a warning).
+    - **Task-Tailored Reasoning Effort**: Creative recommendation commands (`recommend --gemini` and `radio --gemini`) use `medium` thinking effort for deeper musical curation, while high-volume batch library classification (`organize`) targets `minimal` thinking effort (automatically stepping up to `low` on models that do not support `minimal`, such as `gemini-3.8-flash`) to keep token usage low.
+    - `GEMINI_SERVICE_TIER` is optional (`standard` or `flex`, default: `standard`). When set to `flex`, requests route through Google Gemini's flex service tier for 50% lower token pricing (turnaround is variable, typically 1–15 minutes). Overridden by explicit `--flex` or `--no-flex` CLI flags.
     - `GEMINI_FLEX_TIMEOUT_SECONDS` is optional (positive integer, default: `900` seconds / 15 minutes). Sets client HTTP timeout for flex tier requests.
     - `GEMINI_FLEX_FALLBACK_STANDARD` (or `GEMINI_SERVICE_TIER_FALLBACK`) is optional (`true` or `false`, or `standard`, default: `false`). When set to `true` (or `GEMINI_SERVICE_TIER_FALLBACK=standard`), automatically falls back to standard tier inference if flex capacity encounters demand spikes (HTTP 503), capacity shedding (HTTP 429), or timeouts after retries, logging a warning rather than failing fast. Overridden by `--flex-fallback-standard` / `--no-flex-fallback-standard` CLI flags.
 
@@ -322,7 +323,7 @@ uv run tde radio --artist "Lost Tribe" --track "Gamemaster"
 
 **Symptoms:** The CLI exits with an error mentioning `category='response-handling'` or indicates Gemini returned an unusable structured response after retry.
 
-**Explanation:** The request reached Gemini, but the response was not usable for playlist generation (for example, empty parsed output or blocked terminal state). The CLI retries exactly once and then aborts to avoid misattributing the failure to `--exclude-favorites`.
+**Explanation:** The request reached Gemini, but the interaction returned an unusable response for playlist generation (for example, empty or malformed structured JSON output, or a failed/cancelled interaction status). The CLI retries once automatically and then aborts to avoid misattributing the failure to `--exclude-favorites`.
 
 **Corrective action:**
 
@@ -442,7 +443,7 @@ tidal-discovery-engine/
 │       ├── genre_organizer_service.py # Multi-genre analysis & playlist sync
 │       ├── lastfm_service.py          # Last.fm similar tracks discovery
 │       └── tidal_service.py           # Tidal API session & playlist management
-├── tests/                      # Automated test suite (all 122 tests pass)
+├── tests/                      # Automated test suite (all 193 tests pass)
 ├── data/                       # Local SQLite databases (gitignored runtime data)
 ├── .env.example                # Template for environment variables and API keys
 ├── pyproject.toml              # Dependencies and project metadata
@@ -470,10 +471,10 @@ This approach ensured that the project was well-defined, robust, and implemented
 *   **APIs**
     *   [Last.fm API](https://www.last.fm/api) - Used for finding similar tracks.
     *   [Tidal API](https://developer.tidal.com/) - Used for accessing user favorites, searching catalog, and creating/syncing playlists.
-    *   [Google Gemini API](https://ai.google.dev/) - Used for AI music recommendations and library genre classification.
+    *   [Google Gemini Interactions API](https://ai.google.dev/gemini-api/docs/interactions) - Used for stateless AI music recommendations and library genre classification.
 
 *   **Libraries & Tools**
-    *   [`google-genai`](https://github.com/googleapis/python-genai) - The official Python SDK for Google's Gemini API.
+    *   [`google-genai`](https://github.com/googleapis/python-genai) (`>=2.25.0`) - The official Python SDK for Google's Gemini Interactions API.
     *   [`tidalapi`](https://github.com/tamland/python-tidal) - A Python wrapper for the Tidal API.
     *   [`pylast`](https://github.com/pylast/pylast) - A Python wrapper for the Last.fm API.
     *   [`click`](https://click.palletsprojects.com/) - A Python package for creating command-line interfaces.
