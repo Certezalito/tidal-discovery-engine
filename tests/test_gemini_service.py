@@ -460,7 +460,9 @@ class TestGeminiService(unittest.TestCase):
         mock_client.interactions.create.assert_called_once()
         _, kwargs = mock_client.interactions.create.call_args
         self.assertIs(kwargs["store"], False)
-        self.assertEqual(kwargs["generation_config"], {"thinking_level": "minimal"})
+        # gemini-flash-latest currently tracks gemini-3.8-flash and proactively uses 'low'
+        # to avoid a wasted HTTP 400 round-trip on every batch.
+        self.assertEqual(kwargs["generation_config"], {"thinking_level": "low"})
         self.assertNotIn("temperature", kwargs["generation_config"])
         # Compact numbered prompt must not echo ISRCs to Gemini (Principle VI & VIII).
         self.assertIn("0: A - 1", kwargs["input"])
@@ -528,6 +530,26 @@ class TestGeminiService(unittest.TestCase):
 
     @patch("src.services.gemini_service._read_dotenv_values", return_value={})
     @patch("src.services.gemini_service.genai.Client")
+    def test_classify_tracks_genres_uses_minimal_thinking_for_flash_lite_models(
+        self,
+        mock_client_class,
+        _mock_dotenv,
+    ):
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        mock_client.interactions.create.return_value = self._genre_interaction(
+            [{"id": 0, "p": "Synthpop", "s": ["Electropop"]}]
+        )
+
+        with patch.dict("os.environ", {"GEMINI_MODEL": "gemini-3.5-flash-lite"}, clear=True):
+            results = gemini_service.classify_tracks_genres("test-key", [{"artist": "A", "title": "1"}])
+
+        self.assertEqual(results[0]["primary_genre"], "Synthpop")
+        _, kwargs = mock_client.interactions.create.call_args
+        self.assertEqual(kwargs["generation_config"], {"thinking_level": "minimal"})
+
+    @patch("src.services.gemini_service._read_dotenv_values", return_value={})
+    @patch("src.services.gemini_service.genai.Client")
     def test_classify_tracks_genres_reactively_downgrades_minimal_to_low_on_400(
         self,
         mock_client_class,
@@ -544,7 +566,8 @@ class TestGeminiService(unittest.TestCase):
         )
         mock_client.interactions.create.side_effect = [bad_thinking_err, ok_interaction]
 
-        results = gemini_service.classify_tracks_genres("test-key", [{"artist": "Foals", "title": "Tron"}])
+        with patch.dict("os.environ", {"GEMINI_MODEL": "gemini-custom-flash"}, clear=True):
+            results = gemini_service.classify_tracks_genres("test-key", [{"artist": "Foals", "title": "Tron"}])
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["primary_genre"], "Math Rock")

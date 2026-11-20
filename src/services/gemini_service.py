@@ -44,9 +44,10 @@ _DEPRECATED_LEGACY_MODEL_PATTERN = re.compile(
 )
 
 # Models documented by Google as supporting low/medium/high thinking but rejecting "minimal".
-# Proactively downgrading avoids an unnecessary 400 round-trip; reactive 400 fallback also protects
-# dynamic aliases like gemini-flash-latest if they point to one of these models upstream.
+# Proactively downgrading avoids an unnecessary 400 round-trip on every batch; reactive 400
+# fallback also protects any future model aliases that drop "minimal" support.
 _NON_MINIMAL_THINKING_MODEL_PATTERNS = (
+    re.compile(r"^gemini-flash-latest$", re.IGNORECASE),
     re.compile(r"^gemini-3\.8-flash(?:[-.].*)?$", re.IGNORECASE),
     re.compile(r"^gemini-4(?:[-.].*)?$", re.IGNORECASE),
     re.compile(r"^gemini-3(?:\.1)?-pro(?:[-.].*)?$", re.IGNORECASE),
