@@ -47,6 +47,34 @@ def validate_radio_inputs(artist, track, num_tracks):
     return str(artist).strip(), str(track).strip()
 
 
+def _emit_gemini_token_summary(usage: dict | None, show_when_zero: bool = False) -> None:
+    """
+    Logs structured Gemini token counts and renders the `/context`-style visual breakdown
+    panel to terminal output when Gemini was invoked (or when show_when_zero=True for cached organize runs).
+    """
+    if not usage:
+        return
+    total_tokens = int(usage.get("total_tokens") or 0)
+    calls = int(usage.get("calls") or 0)
+    if total_tokens <= 0 and calls <= 0 and not show_when_zero:
+        return
+
+    est_cost = usage.get("est_cost_usd")
+    cost_str = f"${est_cost:.4f}" if isinstance(est_cost, (int, float)) else "unknown"
+    logging.info(
+        "Gemini Token Usage Summary: model='%s', tier='%s', calls=%d, input=%d, thought=%d, output=%d, total=%d, est_cost=%s",
+        usage.get("model") or gemini_service.DEFAULT_GEMINI_MODEL,
+        usage.get("service_tier") or gemini_service.DEFAULT_SERVICE_TIER,
+        calls,
+        int(usage.get("input_tokens") or 0),
+        int(usage.get("thought_tokens") or 0),
+        int(usage.get("output_tokens") or 0),
+        total_tokens,
+        cost_str,
+    )
+    click.echo(gemini_service.format_token_usage_report(usage))
+
+
 def generate_track_radio(
     artist: str,
     track: str,
@@ -162,6 +190,7 @@ def generate_track_radio(
                 click.echo(FLEX_UPFRONT_NOTICE)
 
             total_count = needed_recommendations * (3 if exclude_favorites else 1)
+            gemini_service.reset_token_usage()
             try:
                 recommendations = gemini_service.get_recommendations(
                     api_key=os.environ["GEMINI_API_KEY"],
@@ -377,6 +406,8 @@ def generate_track_radio(
         else:
             click.echo(f"\nPlaylist '{playlist_name}' created successfully!")
         click.echo(f"View it here: {playlist_url}")
+        if use_gemini:
+            _emit_gemini_token_summary(gemini_service.get_token_usage())
         return playlist
 
     except KeyboardInterrupt:
@@ -549,6 +580,7 @@ def recommend(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_na
             # Calculate total tracks needed
             total_count = requested_track_count * (3 if exclude_favorites else 1)
             unresolved_recommendations = []
+            gemini_service.reset_token_usage()
 
             try:
                 recommendations = gemini_service.get_recommendations(
@@ -743,6 +775,8 @@ def recommend(gemini, num_tidal_tracks, num_similar_tracks, shuffle, playlist_na
         else:
             click.echo(f"\nPlaylist '{playlist_name}' created successfully!")
         click.echo(f"View it here: {playlist_url}")
+        if use_gemini:
+            _emit_gemini_token_summary(gemini_service.get_token_usage())
 
     except KeyboardInterrupt:
         click.echo("Operation canceled by user.")
@@ -867,6 +901,18 @@ def _execute_genre_organizer(
         if folder_url:
             click.echo(f"Folder URL:             {folder_url}")
         click.echo("------------------------------------")
+        if not wipe_only:
+            organize_usage = {
+                "input_tokens": getattr(summary, "gemini_input_tokens", 0) or 0,
+                "thought_tokens": getattr(summary, "gemini_thought_tokens", 0) or 0,
+                "output_tokens": getattr(summary, "gemini_output_tokens", 0) or 0,
+                "total_tokens": getattr(summary, "gemini_total_tokens", 0) or 0,
+                "calls": getattr(summary, "gemini_calls", 0) or 0,
+                "model": getattr(summary, "gemini_model", None) or gemini_service.DEFAULT_GEMINI_MODEL,
+                "service_tier": getattr(summary, "service_tier", None) or resolved_tier,
+                "est_cost_usd": getattr(summary, "gemini_est_cost_usd", 0.0),
+            }
+            _emit_gemini_token_summary(organize_usage, show_when_zero=True)
         if folder_url:
             click.echo(f"\nView folder '{folder}' here: {folder_url}")
 

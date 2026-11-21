@@ -59,6 +59,226 @@ _NON_MINIMAL_THINKING_MODEL_PATTERNS = (
 # Terminal Interaction statuses that indicate the response failed or was canceled before completion.
 _UNUSABLE_INTERACTION_STATUSES = {"failed", "cancelled"}
 
+# Standard-tier Paid API pricing (USD per 1M tokens): (input_price, output_and_thought_price).
+# Flex tier applies a 50% discount on top of these rates.
+_MODEL_PRICING_PER_MILLION: dict[str, tuple[float, float]] = {
+    "gemini-4-neon": (3.00, 15.00),
+    "gemini-4-hydrogen": (1.50, 7.50),
+    "gemini-3.8-flash": (0.75, 3.75),
+    "gemini-flash-latest": (0.75, 3.75),
+    "gemini-3.5-flash-lite": (0.30, 2.50),
+    "gemini-flash-lite-latest": (0.30, 2.50),
+}
+
+# Thread-safe accumulator tracking Gemini token usage across a single CLI command invocation.
+_TOKEN_USAGE_LOCK = threading.Lock()
+_TOKEN_USAGE_STATE: dict[str, Any] = {
+    "input_tokens": 0,
+    "thought_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0,
+    "calls": 0,
+    "model": None,
+    "service_tier": None,
+    "est_cost_usd": 0.0,
+    "cost_known": True,
+}
+
+
+def reset_token_usage() -> None:
+    """Resets the run-level Gemini token usage accumulator before starting a CLI command."""
+    with _TOKEN_USAGE_LOCK:
+        _TOKEN_USAGE_STATE.update(
+            {
+                "input_tokens": 0,
+                "thought_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "calls": 0,
+                "model": None,
+                "service_tier": None,
+                "est_cost_usd": 0.0,
+                "cost_known": True,
+            }
+        )
+
+
+def _extract_token_usage(interaction) -> dict[str, int]:
+    """
+    Extracts token counts from an Interaction's `.usage` object safely.
+    Returns zeroed counts when usage metadata is unavailable (e.g. unit test mocks).
+    """
+    usage = getattr(interaction, "usage", None)
+    if usage is None:
+        return {"input_tokens": 0, "thought_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    def _safe_int(attr: str) -> int:
+        val = usage.get(attr) if isinstance(usage, dict) else getattr(usage, attr, None)
+        try:
+            return max(0, int(val)) if val is not None else 0
+        except (TypeError, ValueError):
+            return 0
+
+    input_tokens = _safe_int("total_input_tokens")
+    thought_tokens = _safe_int("total_thought_tokens")
+    output_tokens = _safe_int("total_output_tokens")
+    total_tokens = _safe_int("total_tokens") or (input_tokens + thought_tokens + output_tokens)
+    return {
+        "input_tokens": input_tokens,
+        "thought_tokens": thought_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
+def estimate_token_cost_usd(
+    model_name: str | None,
+    service_tier: str | None,
+    input_tokens: int,
+    thought_tokens: int,
+    output_tokens: int,
+) -> float | None:
+    """
+    Estimates USD cost for a Gemini call from published per-1M token rates (with 50% flex discount).
+    Returns None for custom/unrecognized models so the CLI never displays guessed pricing.
+    """
+    if not model_name:
+        return None
+    rates = _MODEL_PRICING_PER_MILLION.get(model_name.strip().lower())
+    if rates is None:
+        return None
+    in_rate, out_rate = rates
+    tier_multiplier = 0.5 if (service_tier or "").strip().lower() == "flex" else 1.0
+    cost = ((input_tokens * in_rate) + ((output_tokens + thought_tokens) * out_rate)) / 1_000_000.0
+    return cost * tier_multiplier
+
+
+def _record_token_usage(interaction, model_name: str, service_tier: str) -> dict[str, int]:
+    """
+    Extracts, logs, and accumulates token usage for a completed Gemini Interaction call.
+    Per-call cost is accumulated with the active tier so flex-to-standard fallback runs remain accurate.
+    """
+    counts = _extract_token_usage(interaction)
+    call_cost = estimate_token_cost_usd(
+        model_name,
+        service_tier,
+        counts["input_tokens"],
+        counts["thought_tokens"],
+        counts["output_tokens"],
+    )
+
+    with _TOKEN_USAGE_LOCK:
+        _TOKEN_USAGE_STATE["input_tokens"] += counts["input_tokens"]
+        _TOKEN_USAGE_STATE["thought_tokens"] += counts["thought_tokens"]
+        _TOKEN_USAGE_STATE["output_tokens"] += counts["output_tokens"]
+        _TOKEN_USAGE_STATE["total_tokens"] += counts["total_tokens"]
+        _TOKEN_USAGE_STATE["calls"] += 1
+        _TOKEN_USAGE_STATE["model"] = model_name
+        _TOKEN_USAGE_STATE["service_tier"] = service_tier
+        if call_cost is None:
+            _TOKEN_USAGE_STATE["cost_known"] = False
+        else:
+            _TOKEN_USAGE_STATE["est_cost_usd"] += call_cost
+
+    if counts["total_tokens"] > 0:
+        cost_suffix = f", est_cost=${call_cost:.4f}" if call_cost is not None else ""
+        logging.info(
+            "Gemini token usage (model='%s', tier='%s'): input=%d, thought=%d, output=%d, total=%d%s",
+            model_name,
+            service_tier,
+            counts["input_tokens"],
+            counts["thought_tokens"],
+            counts["output_tokens"],
+            counts["total_tokens"],
+            cost_suffix,
+        )
+    return counts
+
+
+def get_token_usage() -> dict[str, Any]:
+    """Returns a snapshot copy of the accumulated Gemini token usage for the current command run."""
+    with _TOKEN_USAGE_LOCK:
+        snapshot = dict(_TOKEN_USAGE_STATE)
+    if not snapshot["cost_known"] or snapshot["calls"] == 0:
+        snapshot["est_cost_usd"] = 0.0 if snapshot["calls"] == 0 else None
+    return snapshot
+
+
+def format_token_usage_report(usage: dict[str, Any], bar_width: int = 24) -> str:
+    """
+    Renders a `/context`-inspired visual token breakdown panel for CLI terminal output,
+    including a proportional stacked bar (Input / Thought / Output), percentages, and est. cost.
+    """
+    input_t = int(usage.get("input_tokens") or 0)
+    thought_t = int(usage.get("thought_tokens") or 0)
+    output_t = int(usage.get("output_tokens") or 0)
+    total_t = int(usage.get("total_tokens") or (input_t + thought_t + output_t))
+    calls = int(usage.get("calls") or 0)
+    model = usage.get("model") or DEFAULT_GEMINI_MODEL
+    tier = usage.get("service_tier") or DEFAULT_SERVICE_TIER
+    est_cost = usage.get("est_cost_usd")
+
+    header = f"Model: {model} | Tier: {tier} | Calls: {calls}"
+
+    if total_t <= 0:
+        empty_bar = "░" * bar_width
+        return "\n".join(
+            [
+                "",
+                "--- Gemini Token Usage ---",
+                header,
+                f"[{empty_bar}]  0 total tokens (100% cached — $0.0000)",
+                "--------------------------",
+            ]
+        )
+
+    # Compute proportional bar cells so non-zero categories get at least 1 cell when space permits.
+    def _cells(count: int) -> int:
+        if count <= 0:
+            return 0
+        return max(1, round((count / total_t) * bar_width))
+
+    in_cells = _cells(input_t)
+    th_cells = _cells(thought_t)
+    out_cells = _cells(output_t)
+
+    # Adjust largest non-zero segment so total filled cells match bar_width exactly.
+    diff = (in_cells + th_cells + out_cells) - bar_width
+    if diff != 0:
+        segments = [("in", in_cells), ("th", th_cells), ("out", out_cells)]
+        segments.sort(key=lambda pair: pair[1], reverse=True)
+        top_key = segments[0][0]
+        if top_key == "in":
+            in_cells = max(1, in_cells - diff)
+        elif top_key == "th":
+            th_cells = max(1, th_cells - diff)
+        else:
+            out_cells = max(1, out_cells - diff)
+
+    bar = ("█" * in_cells) + ("▓" * th_cells) + ("▒" * out_cells)
+    if len(bar) < bar_width:
+        bar += "░" * (bar_width - len(bar))
+    else:
+        bar = bar[:bar_width]
+
+    cost_label = f" (est. ${est_cost:.4f})" if isinstance(est_cost, (int, float)) else ""
+    in_pct = (input_t / total_t) * 100
+    th_pct = (thought_t / total_t) * 100
+    out_pct = (output_t / total_t) * 100
+
+    return "\n".join(
+        [
+            "",
+            "--- Gemini Token Usage ---",
+            header,
+            f"[{bar}]  {total_t:,} total tokens{cost_label}",
+            f"  █ Input:     {input_t:>7,}  ({in_pct:5.1f}%)",
+            f"  ▓ Thought:   {thought_t:>7,}  ({th_pct:5.1f}%)",
+            f"  ▒ Output:    {output_t:>7,}  ({out_pct:5.1f}%)",
+            "--------------------------",
+        ]
+    )
+
 
 class GeminiModelUnavailableError(ValueError):
     """Raised when the configured Gemini model is unavailable or not found."""
@@ -806,6 +1026,7 @@ def _generate_recommendations_with_model(
             with _flex_heartbeat(service_tier, timeout_ms):
                 interaction = client.interactions.create(**request_kwargs)
 
+            _record_token_usage(interaction, model_name, service_tier)
             state, payload = _classify_response_state(interaction)
             if state == "usable":
                 return payload
@@ -1160,6 +1381,7 @@ def classify_tracks_genres(
             with _flex_heartbeat(tier, timeout_ms):
                 interaction = client.interactions.create(**request_kwargs)
 
+            _record_token_usage(interaction, primary_model, tier)
             state, payload = _parse_genre_classification_interaction(interaction, tracks=tracks)
             if state == "usable":
                 logging.info("Gemini track classifications retrieved successfully (tier='%s').", tier)

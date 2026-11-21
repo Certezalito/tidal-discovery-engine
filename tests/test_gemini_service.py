@@ -11,11 +11,12 @@ class TestGeminiService(unittest.TestCase):
     class _FakeInteraction:
         """Minimal test double mimicking a google-genai Interactions API Interaction response."""
 
-        def __init__(self, output_text=None, status="completed", error=None, steps=None):
+        def __init__(self, output_text=None, status="completed", error=None, steps=None, usage=None):
             self.output_text = output_text
             self.status = status
             self.error = error
             self.steps = steps or []
+            self.usage = usage
 
     class _FakeClientError(Exception):
         def __init__(self, message, code=None, status_code=None):
@@ -1178,6 +1179,89 @@ class TestGeminiService(unittest.TestCase):
 
         logs = "\n".join(log_capture.output)
         self.assertNotIn("Waiting for Gemini Flex opportunistic capacity...", logs)
+
+    # ------------------------------------------------------------------
+    # Token Usage Tracking, Cost Estimation & `/context`-Style Formatter
+    # ------------------------------------------------------------------
+
+    @patch("src.services.gemini_service._read_dotenv_values", return_value={})
+    @patch("src.services.gemini_service.genai.Client")
+    def test_token_usage_accumulates_and_logs_per_call(self, mock_client_class, _mock_dotenv):
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        usage_obj = type(
+            "FakeUsage",
+            (),
+            {
+                "total_input_tokens": 394,
+                "total_thought_tokens": 617,
+                "total_output_tokens": 135,
+                "total_tokens": 1146,
+            },
+        )()
+        mock_client.interactions.create.return_value = self._FakeInteraction(
+            output_text=json.dumps({"songs": [{"artist": "Bedrock", "title": "Heaven Scent"}]}),
+            usage=usage_obj,
+        )
+
+        gemini_service.reset_token_usage()
+        seed_track = type("Seed", (), {"artist": type("A", (), {"name": "Sasha"})(), "name": "Xpander"})()
+        with self.assertLogs("root", level="INFO") as log_capture:
+            gemini_service.get_recommendations("test-key", [seed_track], 1, flex=False)
+
+        usage = gemini_service.get_token_usage()
+        self.assertEqual(usage["input_tokens"], 394)
+        self.assertEqual(usage["thought_tokens"], 617)
+        self.assertEqual(usage["output_tokens"], 135)
+        self.assertEqual(usage["total_tokens"], 1146)
+        self.assertEqual(usage["calls"], 1)
+        self.assertEqual(usage["model"], "gemini-4-neon")
+        self.assertEqual(usage["service_tier"], "standard")
+        self.assertAlmostEqual(usage["est_cost_usd"], 0.012462, places=5)
+
+        logs = "\n".join(log_capture.output)
+        self.assertIn("Gemini token usage (model='gemini-4-neon', tier='standard'): input=394, thought=617, output=135, total=1146", logs)
+
+    def test_format_token_usage_report_renders_context_style_bar_and_cached_zero(self):
+        report = gemini_service.format_token_usage_report(
+            {
+                "input_tokens": 394,
+                "thought_tokens": 617,
+                "output_tokens": 135,
+                "total_tokens": 1146,
+                "calls": 1,
+                "model": "gemini-4-neon",
+                "service_tier": "flex",
+                "est_cost_usd": 0.0062,
+            }
+        )
+        self.assertIn("--- Gemini Token Usage ---", report)
+        self.assertIn("Model: gemini-4-neon | Tier: flex | Calls: 1", report)
+        self.assertIn("1,146 total tokens (est. $0.0062)", report)
+        self.assertIn("█ Input:", report)
+        self.assertIn("▓ Thought:", report)
+        self.assertIn("▒ Output:", report)
+
+        cached_report = gemini_service.format_token_usage_report(
+            {
+                "input_tokens": 0,
+                "thought_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "calls": 0,
+                "model": "gemini-flash-latest",
+                "service_tier": "standard",
+                "est_cost_usd": 0.0,
+            }
+        )
+        self.assertIn("0 total tokens (100% cached — $0.0000)", cached_report)
+
+    def test_estimate_token_cost_usd_applies_flex_discount_and_handles_unknown_model(self):
+        std = gemini_service.estimate_token_cost_usd("gemini-4-neon", "standard", 1_000_000, 0, 1_000_000)
+        flex = gemini_service.estimate_token_cost_usd("gemini-4-neon", "flex", 1_000_000, 0, 1_000_000)
+        self.assertAlmostEqual(std, 18.0, places=4)
+        self.assertAlmostEqual(flex, 9.0, places=4)
+        self.assertIsNone(gemini_service.estimate_token_cost_usd("custom-unknown-model", "standard", 100, 0, 100))
 
 
 if __name__ == "__main__":

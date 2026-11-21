@@ -18,6 +18,13 @@ class GenreRunSummary(BaseModel):
     folder_url: Optional[str] = None
     service_tier: Optional[str] = None
     fallback_triggered: bool = False
+    gemini_input_tokens: int = 0
+    gemini_thought_tokens: int = 0
+    gemini_output_tokens: int = 0
+    gemini_total_tokens: int = 0
+    gemini_calls: int = 0
+    gemini_model: Optional[str] = None
+    gemini_est_cost_usd: Optional[float] = 0.0
 
 def _get_tracks_batch(tracks, batch_size=100):
     for i in range(0, len(tracks), batch_size):
@@ -193,8 +200,13 @@ def run_genre_organizer_sync(
         logging.info(f"{len(uncached_tracks)} tracks not cached or UNKNOWN. Querying Gemini...")
         records_to_save = []
         active_flex = flex
-        from src.services.gemini_service import _resolve_service_tier
+        from src.services.gemini_service import (
+            _resolve_service_tier,
+            get_token_usage,
+            reset_token_usage,
+        )
         initial_tier, _, _ = _resolve_service_tier(flex)
+        reset_token_usage()
 
         def on_batch_fallback():
             nonlocal active_flex
@@ -276,6 +288,16 @@ def run_genre_organizer_sync(
             summary.service_tier = "standard"
         else:
             summary.service_tier = "flex"
+
+        # Snapshot cumulative Gemini token usage across all classification batches in this run.
+        token_usage = get_token_usage()
+        summary.gemini_input_tokens = token_usage.get("input_tokens", 0)
+        summary.gemini_thought_tokens = token_usage.get("thought_tokens", 0)
+        summary.gemini_output_tokens = token_usage.get("output_tokens", 0)
+        summary.gemini_total_tokens = token_usage.get("total_tokens", 0)
+        summary.gemini_calls = token_usage.get("calls", 0)
+        summary.gemini_model = token_usage.get("model")
+        summary.gemini_est_cost_usd = token_usage.get("est_cost_usd")
 
     # Thresholding: Standalone playlists are created ONLY for genres and sub-genres with >= min_genre_size tracks.
     # Tracks whose primary genre has < min_genre_size tracks are routed to "Others".

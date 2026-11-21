@@ -37,6 +37,7 @@ A command-line tool that generates Tidal playlists with recommended tracks using
     - `GEMINI_FALLBACK_MODEL` is optional. Used only when the primary model is unavailable or not found (also auto-substitutes deprecated `1.5`/`2.0`/`2.5` identifiers with a warning).
     - `GEMINI_ORGANIZE_MODEL` is optional. Overrides the Gemini model used specifically by `tde organize` (resolution order: `GEMINI_ORGANIZE_MODEL` → `GEMINI_MODEL` → `gemini-flash-latest`). Batch classification uses a compact index-keyed JSON payload (`{id, p, s}`) so Gemini never echoes back artist names, track titles, or ISRCs, significantly reducing output token cost.
     - **Task-Tailored Reasoning Effort**: Recommendation commands (`recommend --gemini` and `radio --gemini`) use `gemini-4-neon` with `low` thinking effort by default for fast, cost-efficient curation, while batch library classification (`organize`) uses `gemini-flash-latest` with `low` thinking effort (or `minimal` on `flash-lite` models) to keep token usage low.
+    - **Token Usage Reporting**: Every Gemini-backed run (`recommend --gemini`, `radio --gemini`, and `organize`) logs per-call token counts (`input`, `thought`, `output`, `total`) and prints a visual `/context`-style Gemini Token Usage breakdown panel with percentages and estimated USD cost at completion.
     - `GEMINI_SERVICE_TIER` is optional (`standard` or `flex`, default: `standard`). When set to `flex`, requests route through Google Gemini's flex service tier for 50% lower token pricing (turnaround is variable, typically 1–15 minutes). Overridden by explicit `--flex` or `--no-flex` CLI flags.
     - `GEMINI_FLEX_TIMEOUT_SECONDS` is optional (positive integer, default: `900` seconds / 15 minutes). Sets client HTTP timeout for flex tier requests.
     - `GEMINI_FLEX_FALLBACK_STANDARD` (or `GEMINI_SERVICE_TIER_FALLBACK`) is optional (`true` or `false`, or `standard`, default: `false`). When set to `true` (or `GEMINI_SERVICE_TIER_FALLBACK=standard`), automatically falls back to standard tier inference if flex capacity encounters demand spikes (HTTP 503), capacity shedding (HTTP 429), or timeouts after retries, logging a warning rather than failing fast. Overridden by `--flex-fallback-standard` / `--no-flex-fallback-standard` CLI flags.
@@ -444,7 +445,7 @@ tidal-discovery-engine/
 │       ├── genre_organizer_service.py # Multi-genre analysis & playlist sync
 │       ├── lastfm_service.py          # Last.fm similar tracks discovery
 │       └── tidal_service.py           # Tidal API session & playlist management
-├── tests/                      # Automated test suite (all 195 tests pass)
+├── tests/                      # Automated test suite (all 199 tests pass)
 ├── data/                       # Local SQLite databases (gitignored runtime data)
 ├── .env.example                # Template for environment variables and API keys
 ├── pyproject.toml              # Dependencies and project metadata
