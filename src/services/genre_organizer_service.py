@@ -268,6 +268,7 @@ def run_genre_organizer_sync(
         sync_playlist_tracks,
         get_track_identity_key,
         get_playlist_dedup_key,
+        is_track_available_in_catalog,
         delete_playlist,
     )
     from src.services.gemini_service import classify_tracks_genres
@@ -598,6 +599,9 @@ def run_genre_organizer_sync(
     
     # Sort genre groups by ascending track count so Tidal "Updated Date" lists largest playlists first
     sorted_genre_groups = sorted(final_genre_groups.items(), key=lambda item: len(item[1]))
+    # Per-run cache of live Tidal track availability checks so each candidate ID is
+    # verified at most once across all playlists before adding to an existing playlist.
+    track_availability_cache: dict[str, bool] = {}
     
     for genre_name, desired_groups in sorted_genre_groups:
         desired_track_ids = [g.canonical_track_id for g in desired_groups]
@@ -621,27 +625,34 @@ def run_genre_organizer_sync(
                 continue
                 
             sync_plan = calculate_playlist_sync_plan(desired_groups, existing_tracks)
+            # Filter out delisted/unavailable track IDs before calling items/add so Tidal
+            # cannot silently remap them onto an existing catalog track and create duplicates.
+            filtered_to_add_ids = [
+                tid
+                for tid in sync_plan.to_add_ids
+                if is_track_available_in_catalog(session, tid, cache=track_availability_cache)
+            ]
             
-            if sync_plan.to_add_ids or sync_plan.to_remove_items:
+            if filtered_to_add_ids or sync_plan.to_remove_items:
                 success = sync_playlist_tracks(
                     session,
                     playlist.id,
-                    to_add_ids=sync_plan.to_add_ids,
+                    to_add_ids=filtered_to_add_ids,
                     to_remove_ids=sync_plan.to_remove_items,
                 )
                 if success:
                     summary.playlists_updated += 1
-                    summary.tracks_added += len(sync_plan.to_add_ids)
+                    summary.tracks_added += len(filtered_to_add_ids)
                     summary.tracks_removed += len(sync_plan.to_remove_items)
                     if sync_plan.duplicates_removed > 0:
                         logging.info(
-                            f"Synced playlist '{playlist.name}': +{len(sync_plan.to_add_ids)} "
+                            f"Synced playlist '{playlist.name}': +{len(filtered_to_add_ids)} "
                             f"-{len(sync_plan.to_remove_items)} tracks "
                             f"(removed {sync_plan.duplicates_removed} duplicates)."
                         )
                     else:
                         logging.info(
-                            f"Synced playlist '{playlist.name}': +{len(sync_plan.to_add_ids)} "
+                            f"Synced playlist '{playlist.name}': +{len(filtered_to_add_ids)} "
                             f"-{len(sync_plan.to_remove_items)} tracks."
                         )
                 else:

@@ -8,6 +8,7 @@ from src.services.tidal_service import (
     normalize_isrc,
     get_track_identity_key,
     get_playlist_dedup_key,
+    is_track_available_in_catalog,
     build_favorites_snapshot,
     filter_out_favorites,
     FavoritesRetrievalError,
@@ -718,6 +719,35 @@ class TestGetPlaylistDedupKey(unittest.TestCase):
     def test_returns_empty_when_neither_isrc_nor_valid_id(self):
         t_empty = MagicMock(id=None, isrc=None)
         self.assertEqual(get_playlist_dedup_key(t_empty), "")
+
+
+class TestIsTrackAvailableInCatalog(unittest.TestCase):
+    def test_returns_false_and_caches_for_unavailable_and_404_tracks(self):
+        from tidalapi.exceptions import ObjectNotFound
+
+        session = MagicMock()
+        session.track.side_effect = [
+            MagicMock(available=False),
+            ObjectNotFound("Track not found"),
+            MagicMock(available=True),
+        ]
+        cache = {}
+
+        self.assertFalse(is_track_available_in_catalog(session, "68921617", cache=cache))
+        # Cached second call must not hit session.track again
+        self.assertFalse(is_track_available_in_catalog(session, "68921617", cache=cache))
+        self.assertFalse(is_track_available_in_catalog(session, "228223770", cache=cache))
+        self.assertTrue(is_track_available_in_catalog(session, "175941190", cache=cache))
+        self.assertEqual(session.track.call_count, 3)
+
+    def test_fails_open_on_transient_500_without_caching_false(self):
+        session = MagicMock()
+        resp_500 = MagicMock(status_code=500)
+        session.track.side_effect = HTTPError("500 Server Error", response=resp_500)
+        cache = {}
+
+        self.assertTrue(is_track_available_in_catalog(session, "175941190", cache=cache))
+        self.assertNotIn("175941190", cache)
 
 
 class TestRemoveTracksFromPlaylist(unittest.TestCase):

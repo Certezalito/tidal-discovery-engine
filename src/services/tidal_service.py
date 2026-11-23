@@ -85,6 +85,64 @@ def get_playlist_dedup_key(track) -> str:
     return ""
 
 
+def is_track_available_in_catalog(session, track_id, cache: dict | None = None) -> bool:
+    """
+    Verify whether a Tidal catalog track ID is currently live/available.
+
+    Tidal's favorites endpoint can return stale/delisted track IDs that look
+    available in the favorites list, yet Tidal's v2 `items/add` endpoint
+    silently remaps them onto a newer replacement catalog ID—creating a fresh
+    duplicate on every organize run. Checking `session.track(track_id)` before
+    adding detects both 404/ObjectNotFound and `available == False` stubs so
+    they are skipped without affecting legitimate tracks on different releases.
+
+    Fails open (returns True) on transient network/5xx errors so valid tracks
+    are never dropped due to temporary API glitches.
+    """
+    tid_str = str(track_id).strip()
+    if not tid_str:
+        return False
+
+    if cache is not None and tid_str in cache:
+        return cache[tid_str]
+
+    if not hasattr(session, "track"):
+        return True
+
+    lookup_id = int(tid_str) if tid_str.isdigit() else tid_str
+    try:
+        live_track = session.track(lookup_id)
+        is_available = getattr(live_track, "available", True) is not False
+        if not is_available:
+            logging.warning(
+                f"Skipping unavailable/delisted track ID {tid_str} to prevent Tidal server-side remap duplicates."
+            )
+        if cache is not None:
+            cache[tid_str] = is_available
+        return is_available
+    except ObjectNotFound:
+        logging.warning(
+            f"Skipping delisted track ID {tid_str} (404 Not Found) to prevent Tidal server-side remap duplicates."
+        )
+        if cache is not None:
+            cache[tid_str] = False
+        return False
+    except HTTPError as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        if status_code == 404:
+            logging.warning(
+                f"Skipping delisted track ID {tid_str} (HTTP 404) to prevent Tidal server-side remap duplicates."
+            )
+            if cache is not None:
+                cache[tid_str] = False
+            return False
+        # Fail open on transient HTTP errors (5xx/429) without caching False.
+        return True
+    except Exception:
+        # Fail open on unexpected/transient errors.
+        return True
+
+
 def fetch_all_favorite_tracks(session, page_size=100, max_page_retries=2):
     favorite_tracks = []
     offset = 0
