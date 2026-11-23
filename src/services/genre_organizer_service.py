@@ -1,5 +1,61 @@
+from dataclasses import dataclass, field
 from pydantic import BaseModel
-from typing import Optional
+from typing import Any, Optional
+
+
+@dataclass
+class TrackDedupGroup:
+    """
+    Aggregates all scanned library tracks representing one unique underlying
+    recording (by ISRC) or exact catalog track (when ISRC is unavailable).
+
+    Retaining all candidate catalog IDs allows playlist sync to preserve a
+    matching release already in a playlist (avoiding release-swap churn) while
+    picking a deterministic canonical ID for newly created playlists.
+    """
+
+    dedup_key: str
+    cache_key: str
+    representative_track: Any
+    candidate_track_ids: list[str]
+    canonical_track_id: str
+
+
+@dataclass
+class PlaylistTrackOccurrence:
+    """Represents a single slot inside an existing Tidal playlist."""
+
+    track_id: str
+    isrc: str
+    item_uuid: Optional[str]
+    dedup_key: str
+
+
+@dataclass
+class PlaylistSyncPlan:
+    """Minimal, duplicate-free mutations needed to reconcile an existing playlist."""
+
+    to_add_ids: list[str] = field(default_factory=list)
+    to_remove_items: list[str] = field(default_factory=list)
+    duplicates_removed: int = 0
+
+
+def _canonical_id_sort_key(track_id: str):
+    """
+    Deterministic sort key for Tidal catalog track IDs independent of API
+    pagination order: numeric IDs sort ascending by integer value first,
+    followed by non-numeric IDs lexicographically.
+    """
+    return (0, int(track_id), track_id) if track_id.isdigit() else (1, 0, track_id)
+
+
+def _is_valid_item_uuid(value: Any) -> bool:
+    """
+    Return True when value matches Tidal v2's 36-character hyphenated item UUID
+    format recognized by remove_tracks_from_playlist.
+    """
+    return isinstance(value, str) and "-" in value and len(value) == 36
+
 
 class GenreRunSummary(BaseModel):
     library_tracks_scanned: int = 0
@@ -33,26 +89,151 @@ def _get_tracks_batch(tracks, batch_size=100):
 def calculate_sync_delta(desired_track_ids: list, existing_track_ids: list):
     """
     Returns lists of track IDs to add and track IDs to remove to match desired state.
-    Duplicate existing IDs are handled safely.
+
+    Compares IDs using normalized string representations to prevent int/str
+    mismatches, deduplicates desired IDs, and includes surplus duplicate
+    occurrences already present in existing_track_ids in to_remove.
     """
-    # Deduplicate desired to avoid trying to add the same track twice
+    # Deduplicate desired IDs while preserving caller order and types
     desired_dedup = []
-    seen = set()
+    desired_str_set = set()
     for d in desired_track_ids:
-        if d not in seen:
-            seen.add(d)
+        d_str = str(d)
+        if d_str not in desired_str_set:
+            desired_str_set.add(d_str)
             desired_dedup.append(d)
 
-    desired_set = set(desired_dedup)
-    existing_set = set(existing_track_ids)
-    
+    existing_str_set = {str(e) for e in existing_track_ids}
+
     # What's in desired but not in existing
-    to_add = [tid for tid in desired_dedup if tid not in existing_set]
-    
-    # What's in existing but not in desired
-    to_remove = [tid for tid in existing_track_ids if tid not in desired_set]
-    
+    to_add = [tid for tid in desired_dedup if str(tid) not in existing_str_set]
+
+    # Remove tracks not in desired AND any surplus (2nd, 3rd, ...) occurrences of desired tracks
+    to_remove = []
+    seen_existing_desired = set()
+    for tid in existing_track_ids:
+        tid_str = str(tid)
+        if tid_str not in desired_str_set:
+            to_remove.append(tid)
+        elif tid_str in seen_existing_desired:
+            to_remove.append(tid)
+        else:
+            seen_existing_desired.add(tid_str)
+
     return to_add, to_remove
+
+
+def calculate_playlist_sync_plan(
+    desired_groups: list[TrackDedupGroup],
+    existing_tracks: list[Any],
+) -> PlaylistSyncPlan:
+    """
+    Reconcile an existing playlist's track occurrences against desired unique
+    TrackDedupGroups using recording identity (ISRC) and exact catalog track ID.
+
+    Key guarantees:
+    - Preserves the first matching existing occurrence per desired dedup_key so
+      alternate catalog releases of the same recording do not churn across runs.
+    - Surgically removes surplus duplicate occurrences (2nd, 3rd, ...) using each
+      occurrence's Tidal v2 item_uuid so the kept copy remains untouched.
+    - Removes every occurrence of obsolete tracks no longer in desired_groups.
+    - When a surplus duplicate lacks a valid item_uuid, falls back to removing by
+      catalog track ID and re-adding one canonical copy so exactly 1 copy remains.
+    """
+    from src.services.tidal_service import get_playlist_dedup_key, normalize_isrc
+
+    # Index desired groups by canonical dedup_key and by every qualifying catalog track ID
+    desired_by_key: dict[str, TrackDedupGroup] = {}
+    candidate_id_to_dedup_key: dict[str, str] = {}
+    for group in desired_groups:
+        if group.dedup_key not in desired_by_key:
+            desired_by_key[group.dedup_key] = group
+        for cid in group.candidate_track_ids:
+            cid_str = str(cid).strip()
+            if cid_str and cid_str not in candidate_id_to_dedup_key:
+                candidate_id_to_dedup_key[cid_str] = group.dedup_key
+
+    # Convert existing playlist items into normalized PlaylistTrackOccurrence entries
+    occurrences: list[PlaylistTrackOccurrence] = []
+    for track in existing_tracks:
+        raw_id = getattr(track, "id", None)
+        track_id_str = (
+            str(raw_id).strip()
+            if isinstance(raw_id, (int, str)) and not isinstance(raw_id, bool)
+            else ""
+        )
+        raw_isrc = getattr(track, "isrc", None)
+        normalized_isrc = normalize_isrc(raw_isrc) if isinstance(raw_isrc, str) else ""
+        raw_uuid = getattr(track, "item_uuid", None)
+        item_uuid = raw_uuid if _is_valid_item_uuid(raw_uuid) else None
+
+        # Match against desired groups by ISRC first (handles alternate releases of the
+        # same recording), then by catalog ID (handles playlist items missing ISRC or
+        # library tracks without ISRC), before falling back to the track's own dedup key.
+        if normalized_isrc and f"isrc:{normalized_isrc}" in desired_by_key:
+            occ_dedup_key = f"isrc:{normalized_isrc}"
+        elif track_id_str and track_id_str in candidate_id_to_dedup_key:
+            occ_dedup_key = candidate_id_to_dedup_key[track_id_str]
+        else:
+            occ_dedup_key = get_playlist_dedup_key(track)
+
+        occurrences.append(
+            PlaylistTrackOccurrence(
+                track_id=track_id_str,
+                isrc=normalized_isrc,
+                item_uuid=item_uuid,
+                dedup_key=occ_dedup_key,
+            )
+        )
+
+    satisfied_keys: set[str] = set()
+    kept_occurrence_by_key: dict[str, PlaylistTrackOccurrence] = {}
+    to_remove_items: list[str] = []
+    removed_track_ids_by_id: set[str] = set()
+    duplicates_removed = 0
+
+    for occ in occurrences:
+        if occ.dedup_key in desired_by_key:
+            if occ.dedup_key not in satisfied_keys:
+                # Keep the first matching occurrence already in the playlist (zero churn).
+                satisfied_keys.add(occ.dedup_key)
+                kept_occurrence_by_key[occ.dedup_key] = occ
+            else:
+                # Surplus duplicate occurrence (same track ID or same ISRC recording).
+                duplicates_removed += 1
+                if occ.item_uuid is not None:
+                    to_remove_items.append(occ.item_uuid)
+                elif occ.track_id and occ.track_id not in removed_track_ids_by_id:
+                    # Without item_uuid, removal by track_id deletes all copies of that ID.
+                    to_remove_items.append(occ.track_id)
+                    removed_track_ids_by_id.add(occ.track_id)
+        else:
+            # Non-qualifying / obsolete track: remove every copy from the playlist.
+            if occ.item_uuid is not None:
+                to_remove_items.append(occ.item_uuid)
+            elif occ.track_id and occ.track_id not in removed_track_ids_by_id:
+                to_remove_items.append(occ.track_id)
+                removed_track_ids_by_id.add(occ.track_id)
+
+    # If degraded non-UUID removal targeted a track_id that was also kept, mark its
+    # dedup_key unsatisfied so one clean canonical copy is re-added after removal.
+    for key, kept_occ in kept_occurrence_by_key.items():
+        if kept_occ.track_id and kept_occ.track_id in removed_track_ids_by_id:
+            satisfied_keys.discard(key)
+
+    to_add_ids: list[str] = []
+    seen_add_ids: set[str] = set()
+    for dedup_key, group in desired_by_key.items():
+        if dedup_key not in satisfied_keys:
+            if group.canonical_track_id not in seen_add_ids:
+                seen_add_ids.add(group.canonical_track_id)
+                to_add_ids.append(group.canonical_track_id)
+
+    return PlaylistSyncPlan(
+        to_add_ids=to_add_ids,
+        to_remove_items=to_remove_items,
+        duplicates_removed=duplicates_removed,
+    )
 
 def run_genre_organizer_sync(
     session,
@@ -86,6 +267,7 @@ def run_genre_organizer_sync(
         get_playlist_tracks,
         sync_playlist_tracks,
         get_track_identity_key,
+        get_playlist_dedup_key,
         delete_playlist,
     )
     from src.services.gemini_service import classify_tracks_genres
@@ -131,38 +313,75 @@ def run_genre_organizer_sync(
         logging.warning("Library is empty. Nothing to process.")
         return summary
 
-    # Deduplicate tracks by identity key
-    unique_tracks = {}
+    # Aggregate scanned tracks by playlist dedup_key (ISRC when available, exact
+    # catalog ID otherwise) BEFORE genre grouping and min-size thresholding so:
+    # 1. Duplicate catalog IDs and alternate releases of the same recording count
+    #    once toward --min-genre-size (FR-002, FR-004).
+    # 2. All candidate catalog IDs are preserved in deterministic sorted order so
+    #    new playlists pick a stable ID while existing playlists retain whichever
+    #    matching release they already contain without churn (FR-003).
+    dedup_buckets: dict[str, dict[str, Any]] = {}
     for t in favorite_tracks:
-        key = get_track_identity_key(t)
-        if key and key not in unique_tracks:
-            unique_tracks[key] = t
+        dedup_key = get_playlist_dedup_key(t)
+        raw_id = getattr(t, "id", None)
+        if (
+            not dedup_key
+            or not isinstance(raw_id, (int, str))
+            or isinstance(raw_id, bool)
+        ):
+            continue
+        track_id_str = str(raw_id).strip()
+        if not track_id_str:
+            continue
 
-    tracks_to_process = list(unique_tracks.values())
-    track_keys = [get_track_identity_key(t) for t in tracks_to_process]
+        if dedup_key not in dedup_buckets:
+            dedup_buckets[dedup_key] = {}
+        if track_id_str not in dedup_buckets[dedup_key]:
+            dedup_buckets[dedup_key][track_id_str] = t
+
+    dedup_groups: dict[str, TrackDedupGroup] = {}
+    for dedup_key, id_to_track in dedup_buckets.items():
+        sorted_ids = sorted(id_to_track.keys(), key=_canonical_id_sort_key)
+        canonical_id = sorted_ids[0]
+        rep_track = id_to_track[canonical_id]
+        # Keep existing SQLite cache key format (get_track_identity_key) for backward
+        # compatibility with data/genre_cache.db, falling back to dedup_key when both
+        # ISRC and title/artist are absent so no track is silently dropped.
+        cache_key = get_track_identity_key(rep_track) or dedup_key
+        dedup_groups[dedup_key] = TrackDedupGroup(
+            dedup_key=dedup_key,
+            cache_key=cache_key,
+            representative_track=rep_track,
+            candidate_track_ids=sorted_ids,
+            canonical_track_id=canonical_id,
+        )
+
+    unique_cache_keys = list(dict.fromkeys(g.cache_key for g in dedup_groups.values()))
     
     # Query SQLite database cache
-    cached_genres, uncached_or_unknown_keys = cache_service.get_cached_genres(track_keys, refresh_genres=refresh_genres)
+    cached_genres, uncached_or_unknown_keys = cache_service.get_cached_genres(
+        unique_cache_keys, refresh_genres=refresh_genres
+    )
     summary.cache_hits = len(cached_genres)
     summary.cache_misses = len(uncached_or_unknown_keys)
     
     import re
-    genre_groups_norm = {}
-    norm_to_canonical = {}
-    track_primary_norm = {}
-    unknown_track_ids = []
+    genre_groups_norm: dict[str, list[str]] = {}
+    norm_to_canonical: dict[str, str] = {}
+    group_primary_norm: dict[str, str] = {}
+    unknown_dedup_keys: list[str] = []
     
-    def add_to_genre_groups(raw_genre: str, track_id: str, is_sub: bool = False):
+    def add_to_genre_groups(raw_genre: str, dedup_key: str, is_sub: bool = False):
         raw_genre = raw_genre.strip()
         norm_key = re.sub(r'[^a-z0-9]', '', raw_genre.lower())
         if not norm_key:
             return
         if not is_sub:
-            track_primary_norm[track_id] = norm_key
+            group_primary_norm[dedup_key] = norm_key
         if norm_key not in genre_groups_norm:
             genre_groups_norm[norm_key] = []
-        if track_id not in genre_groups_norm[norm_key]:
-            genre_groups_norm[norm_key].append(track_id)
+        if dedup_key not in genre_groups_norm[norm_key]:
+            genre_groups_norm[norm_key].append(dedup_key)
         
         if norm_key not in norm_to_canonical:
             norm_to_canonical[norm_key] = raw_genre
@@ -173,13 +392,13 @@ def run_genre_organizer_sync(
             elif raw_genre.istitle() and not existing.istitle() and raw_genre.upper() != raw_genre:
                 norm_to_canonical[norm_key] = raw_genre
 
-    # Process cached classified tracks
+    # Process cached classified tracks and group uncached tracks by cache_key so
+    # Gemini is never queried twice for identical fallback cache keys.
     uncached_keys_set = set(uncached_or_unknown_keys)
-    uncached_tracks = []
-    for t in tracks_to_process:
-        key = get_track_identity_key(t)
-        if key in cached_genres:
-            genre_data = cached_genres[key]
+    uncached_by_cache_key: dict[str, list[TrackDedupGroup]] = {}
+    for group in dedup_groups.values():
+        if group.cache_key in cached_genres:
+            genre_data = cached_genres[group.cache_key]
             if isinstance(genre_data, dict):
                 primary_genre = genre_data.get("primary_genre")
                 sub_genres = genre_data.get("sub_genres", [])
@@ -189,15 +408,16 @@ def run_genre_organizer_sync(
 
             if primary_genre and primary_genre != "Unknown":
                 summary.classified_tracks += 1
-                add_to_genre_groups(primary_genre, t.id, is_sub=False)
+                add_to_genre_groups(primary_genre, group.dedup_key, is_sub=False)
                 for sub in sub_genres:
                     if sub and str(sub).strip():
-                        add_to_genre_groups(str(sub).strip(), t.id, is_sub=True)
-        elif key in uncached_keys_set:
-            uncached_tracks.append(t)
-            
-    if uncached_tracks:
-        logging.info(f"{len(uncached_tracks)} tracks not cached or UNKNOWN. Querying Gemini...")
+                        add_to_genre_groups(str(sub).strip(), group.dedup_key, is_sub=True)
+        elif group.cache_key in uncached_keys_set:
+            uncached_by_cache_key.setdefault(group.cache_key, []).append(group)
+
+    uncached_cache_buckets = list(uncached_by_cache_key.items())
+    if uncached_cache_buckets:
+        logging.info(f"{len(uncached_cache_buckets)} tracks not cached or UNKNOWN. Querying Gemini...")
         records_to_save = []
         active_flex = flex
         from src.services.gemini_service import (
@@ -217,9 +437,10 @@ def run_genre_organizer_sync(
                 )
                 active_flex = False
 
-        for batch in _get_tracks_batch(uncached_tracks, batch_size=50):
+        for batch in _get_tracks_batch(uncached_cache_buckets, batch_size=50):
             batch_inputs = []
-            for t in batch:
+            for _cache_key, bucket_groups in batch:
+                t = bucket_groups[0].representative_track
                 batch_inputs.append({
                     "artist": getattr(t.artist, "name", "") if getattr(t, "artist", None) else "",
                     "title": getattr(t, "title", ""),
@@ -236,18 +457,19 @@ def run_genre_organizer_sync(
             )
             
             batch_records = []
-            for track, result in zip(batch, results):
+            for (cache_key, bucket_groups), result in zip(batch, results):
                 primary_genre = result.get("primary_genre") or result.get("genre")
                 sub_genres = result.get("sub_genres") or []
-                key = get_track_identity_key(track)
-                artist_name = getattr(track.artist, "name", "") if getattr(track, "artist", None) else ""
-                title_str = getattr(track, "title", "")
+                rep_track = bucket_groups[0].representative_track
+                artist_name = getattr(rep_track.artist, "name", "") if getattr(rep_track, "artist", None) else ""
+                title_str = getattr(rep_track, "title", "")
                 
                 if not primary_genre or primary_genre.strip().lower() in ("unknown", ""):
-                    unknown_track_ids.append(track.id)
-                    summary.unknown_tracks += 1
+                    for g in bucket_groups:
+                        unknown_dedup_keys.append(g.dedup_key)
+                        summary.unknown_tracks += 1
                     rec = {
-                        "track_id": key,
+                        "track_id": cache_key,
                         "artist": artist_name,
                         "title": title_str,
                         "primary_genre": "Unknown",
@@ -257,18 +479,16 @@ def run_genre_organizer_sync(
                     records_to_save.append(rec)
                     batch_records.append(rec)
                 else:
-                    summary.classified_tracks += 1
                     genre_key = primary_genre.strip()
-                    add_to_genre_groups(genre_key, track.id, is_sub=False)
-                    clean_subs = []
-                    for sub in sub_genres:
-                        if sub and str(sub).strip():
-                            s_clean = str(sub).strip()
-                            clean_subs.append(s_clean)
-                            add_to_genre_groups(s_clean, track.id, is_sub=True)
+                    clean_subs = [str(sub).strip() for sub in sub_genres if sub and str(sub).strip()]
+                    for g in bucket_groups:
+                        summary.classified_tracks += 1
+                        add_to_genre_groups(genre_key, g.dedup_key, is_sub=False)
+                        for s_clean in clean_subs:
+                            add_to_genre_groups(s_clean, g.dedup_key, is_sub=True)
 
                     rec = {
-                        "track_id": key,
+                        "track_id": cache_key,
                         "artist": artist_name,
                         "title": title_str,
                         "primary_genre": genre_key,
@@ -299,37 +519,28 @@ def run_genre_organizer_sync(
         summary.gemini_model = token_usage.get("model")
         summary.gemini_est_cost_usd = token_usage.get("est_cost_usd")
 
-    # Thresholding: Standalone playlists are created ONLY for genres and sub-genres with >= min_genre_size tracks.
-    # Tracks whose primary genre has < min_genre_size tracks are routed to "Others".
-    # Sub-genres with < min_genre_size tracks are suppressed from standalone playlist creation.
-    final_genre_groups = {}
-    for norm_key, track_ids in genre_groups_norm.items():
+    # Thresholding: Standalone playlists are created ONLY for genres and sub-genres with
+    # >= min_genre_size UNIQUE deduplicated tracks (FR-004).
+    # Tracks whose primary genre has < min_genre_size unique tracks are routed to "Others".
+    # Sub-genres with < min_genre_size unique tracks are suppressed from standalone creation.
+    final_genre_groups: dict[str, list[TrackDedupGroup]] = {}
+    for norm_key, group_keys in genre_groups_norm.items():
         canonical_name = norm_to_canonical[norm_key]
-        if len(track_ids) >= min_genre_size:
-            final_genre_groups[canonical_name] = track_ids
+        if len(group_keys) >= min_genre_size:
+            final_genre_groups[canonical_name] = [dedup_groups[dk] for dk in group_keys]
 
-    others_track_ids = []
-    for tid, primary_norm in track_primary_norm.items():
+    others_dedup_keys = []
+    for dk, primary_norm in group_primary_norm.items():
         if primary_norm and len(genre_groups_norm.get(primary_norm, [])) < min_genre_size:
-            others_track_ids.append(tid)
+            others_dedup_keys.append(dk)
 
-    if others_track_ids:
-        deduped_others = []
-        seen_others = set()
-        for tid in others_track_ids:
-            if tid not in seen_others:
-                seen_others.add(tid)
-                deduped_others.append(tid)
-        final_genre_groups["Others"] = deduped_others
+    if others_dedup_keys:
+        deduped_others = list(dict.fromkeys(others_dedup_keys))
+        final_genre_groups["Others"] = [dedup_groups[dk] for dk in deduped_others]
 
-    if unknown_track_ids:
-        deduped_unknown = []
-        seen_unknown = set()
-        for tid in unknown_track_ids:
-            if tid not in seen_unknown:
-                seen_unknown.add(tid)
-                deduped_unknown.append(tid)
-        final_genre_groups["Unknown"] = deduped_unknown
+    if unknown_dedup_keys:
+        deduped_unknown = list(dict.fromkeys(unknown_dedup_keys))
+        final_genre_groups["Unknown"] = [dedup_groups[dk] for dk in deduped_unknown]
 
     logging.info(f"Classification complete. Processing playlists in folder '{folder_name}'...")
     
@@ -388,7 +599,8 @@ def run_genre_organizer_sync(
     # Sort genre groups by ascending track count so Tidal "Updated Date" lists largest playlists first
     sorted_genre_groups = sorted(final_genre_groups.items(), key=lambda item: len(item[1]))
     
-    for genre_name, desired_track_ids in sorted_genre_groups:
+    for genre_name, desired_groups in sorted_genre_groups:
+        desired_track_ids = [g.canonical_track_id for g in desired_groups]
         search_name = genre_name.lower()
         if search_name in playlist_map:
             playlist = playlist_map[search_name]
@@ -408,17 +620,30 @@ def run_genre_organizer_sync(
                 logging.info(f"Recreated playlist '{genre_name}' with {len(desired_track_ids)} tracks.")
                 continue
                 
-            existing_track_ids = [t.id for t in existing_tracks]
+            sync_plan = calculate_playlist_sync_plan(desired_groups, existing_tracks)
             
-            to_add, to_remove = calculate_sync_delta(desired_track_ids, existing_track_ids)
-            
-            if to_add or to_remove:
-                success = sync_playlist_tracks(session, playlist.id, to_add_ids=to_add, to_remove_ids=to_remove)
+            if sync_plan.to_add_ids or sync_plan.to_remove_items:
+                success = sync_playlist_tracks(
+                    session,
+                    playlist.id,
+                    to_add_ids=sync_plan.to_add_ids,
+                    to_remove_ids=sync_plan.to_remove_items,
+                )
                 if success:
                     summary.playlists_updated += 1
-                    summary.tracks_added += len(to_add)
-                    summary.tracks_removed += len(to_remove)
-                    logging.info(f"Synced playlist '{playlist.name}': +{len(to_add)} -{len(to_remove)} tracks.")
+                    summary.tracks_added += len(sync_plan.to_add_ids)
+                    summary.tracks_removed += len(sync_plan.to_remove_items)
+                    if sync_plan.duplicates_removed > 0:
+                        logging.info(
+                            f"Synced playlist '{playlist.name}': +{len(sync_plan.to_add_ids)} "
+                            f"-{len(sync_plan.to_remove_items)} tracks "
+                            f"(removed {sync_plan.duplicates_removed} duplicates)."
+                        )
+                    else:
+                        logging.info(
+                            f"Synced playlist '{playlist.name}': +{len(sync_plan.to_add_ids)} "
+                            f"-{len(sync_plan.to_remove_items)} tracks."
+                        )
                 else:
                     logging.warning(f"Skipping updates to '{playlist.name}' due to sync errors.")
             else:

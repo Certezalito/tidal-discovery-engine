@@ -57,6 +57,34 @@ def get_track_identity_key(track):
     return ""
 
 
+def get_playlist_dedup_key(track) -> str:
+    """
+    Compute the playlist-level deduplication key for a Tidal track.
+
+    Prefers the normalized International Standard Recording Code (ISRC) so
+    identical recordings released across different albums, singles, or
+    compilations collapse to a single playlist entry while genuinely distinct
+    recordings (e.g., remixes or live versions with different ISRCs) remain
+    separate. When ISRC is unavailable, falls back to exact catalog track ID.
+    """
+    # Require str for ISRC so non-string attributes (such as unconfigured test
+    # mocks) are never stringified into synthetic recording identifiers.
+    raw_isrc = getattr(track, "isrc", None)
+    if isinstance(raw_isrc, str):
+        isrc = normalize_isrc(raw_isrc)
+        if isrc:
+            return f"isrc:{isrc}"
+
+    # Fallback to exact catalog track identity when recording identity is absent.
+    raw_id = getattr(track, "id", None)
+    if isinstance(raw_id, (int, str)) and not isinstance(raw_id, bool):
+        track_id_str = str(raw_id).strip()
+        if track_id_str:
+            return f"id:{track_id_str}"
+
+    return ""
+
+
 def fetch_all_favorite_tracks(session, page_size=100, max_page_retries=2):
     favorite_tracks = []
     offset = 0
@@ -498,6 +526,9 @@ def get_playlist_tracks(session, playlist_id, max_retries=3, retry_delay=1):
                     "id": item.get("id"),
                     "title": item.get("title", ""),
                     "artist": type("Artist", (), {"name": item.get("artists", [{}])[0].get("name", "")})(),
+                    # Preserve ISRC on fallback Track objects so recording-level
+                    # deduplication works even when session.parse_track() fails.
+                    "isrc": item.get("isrc"),
                 })()
 
             track.item_uuid = item_uuid
@@ -735,7 +766,17 @@ def add_tracks_to_playlist(session_or_playlist, playlist_id_or_tracks, track_ids
     if not track_ids:
         return True
 
-    str_track_ids = [str(t) for t in track_ids]
+    # Deduplicate outgoing track IDs while preserving first-seen order so a single
+    # add request can never submit repeating catalog IDs to Tidal's v2 endpoint.
+    str_track_ids = list(
+        dict.fromkeys(
+            str(t).strip()
+            for t in track_ids
+            if t is not None and not isinstance(t, bool) and str(t).strip()
+        )
+    )
+    if not str_track_ids:
+        return True
 
     for i in range(0, len(str_track_ids), chunk_size):
         chunk = str_track_ids[i:i + chunk_size]

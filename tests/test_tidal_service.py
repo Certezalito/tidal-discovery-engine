@@ -7,6 +7,7 @@ from src.services.tidal_service import (
     create_playlist,
     normalize_isrc,
     get_track_identity_key,
+    get_playlist_dedup_key,
     build_favorites_snapshot,
     filter_out_favorites,
     FavoritesRetrievalError,
@@ -508,6 +509,20 @@ class TestAddTracksToPlaylist(unittest.TestCase):
         self.assertTrue(result)
         self.mock_session.request.request.assert_not_called()
 
+    def test_add_tracks_to_playlist_deduplicates_preserving_order(self):
+        result = add_tracks_to_playlist(
+            self.mock_session,
+            "playlist-1",
+            ["101", 102, "101", "103", "102"],
+        )
+        self.assertTrue(result)
+        self.mock_session.request.request.assert_called_once_with(
+            "PUT",
+            "playlists/playlist-1/items/add",
+            params={"itemIds": "101,102,103"},
+            base_url="https://api.tidal.com/v2/",
+        )
+
     def test_add_tracks_to_playlist_chunking(self):
         track_ids = [str(i) for i in range(75)]
         result = add_tracks_to_playlist(self.mock_session, "playlist-1", track_ids, chunk_size=50)
@@ -650,6 +665,59 @@ class TestGetPlaylistTracks(unittest.TestCase):
 
         tracks = get_playlist_tracks(self.mock_session, "empty-pl")
         self.assertEqual(tracks, [])
+
+    def test_get_playlist_tracks_fallback_preserves_isrc(self):
+        self.mock_session.parse_track.side_effect = ValueError("parse failure")
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "content": [
+                {
+                    "id": "00000000-0000-0000-0000-000000000001",
+                    "item": {
+                        "id": 501,
+                        "title": "Fallback Song",
+                        "isrc": "USABC1234567",
+                        "artists": [{"name": "Fallback Artist"}],
+                    },
+                }
+            ],
+            "cursor": None,
+        }
+        self.mock_session.request.request.return_value = mock_response
+
+        tracks = get_playlist_tracks(self.mock_session, "pl-fallback")
+        self.assertEqual(len(tracks), 1)
+        self.assertEqual(tracks[0].id, 501)
+        self.assertEqual(tracks[0].isrc, "USABC1234567")
+        self.assertEqual(tracks[0].item_uuid, "00000000-0000-0000-0000-000000000001")
+
+
+class TestGetPlaylistDedupKey(unittest.TestCase):
+    def test_prefers_normalized_isrc_across_different_catalog_ids(self):
+        t_single = MagicMock(id=111, isrc="us-abc-12-34567")
+        t_album = MagicMock(id="222", isrc="USABC1234567")
+        self.assertEqual(get_playlist_dedup_key(t_single), "isrc:USABC1234567")
+        self.assertEqual(get_playlist_dedup_key(t_album), "isrc:USABC1234567")
+
+    def test_distinct_isrcs_remain_distinct(self):
+        t_studio = MagicMock(id=111, isrc="USABC1234567")
+        t_remix = MagicMock(id=333, isrc="USABC9999999")
+        self.assertNotEqual(get_playlist_dedup_key(t_studio), get_playlist_dedup_key(t_remix))
+
+    def test_falls_back_to_exact_catalog_id_when_isrc_missing(self):
+        t_no_isrc = MagicMock(id=444, isrc=None)
+        t_blank_isrc = MagicMock(id="444", isrc="   ")
+        self.assertEqual(get_playlist_dedup_key(t_no_isrc), "id:444")
+        self.assertEqual(get_playlist_dedup_key(t_blank_isrc), "id:444")
+
+    def test_ignores_non_string_mock_isrc_and_falls_back_to_id(self):
+        # MagicMock without explicit isrc returns a MagicMock object for .isrc
+        t_mock = MagicMock(id="777")
+        self.assertEqual(get_playlist_dedup_key(t_mock), "id:777")
+
+    def test_returns_empty_when_neither_isrc_nor_valid_id(self):
+        t_empty = MagicMock(id=None, isrc=None)
+        self.assertEqual(get_playlist_dedup_key(t_empty), "")
 
 
 class TestRemoveTracksFromPlaylist(unittest.TestCase):
