@@ -584,6 +584,93 @@ class TestGenrePlaylistService(unittest.TestCase):
             to_remove_ids=[],
         )
 
+    @patch("src.services.genre_cache_service.GenreCacheService")
+    @patch("src.services.tidal_service.fetch_all_favorite_tracks")
+    @patch("src.services.tidal_service.get_or_create_folder")
+    @patch("src.services.tidal_service.get_playlists_in_folder")
+    @patch("src.services.tidal_service.get_playlist_tracks")
+    @patch("src.services.tidal_service.sync_playlist_tracks")
+    def test_skips_delisted_remapped_track_while_preserving_different_isrc_releases(
+        self,
+        mock_sync_tracks,
+        mock_get_playlist_tracks,
+        mock_get_pls,
+        mock_get_folder,
+        mock_fetch_tracks,
+        mock_cache_service_cls,
+    ):
+        """
+        Delisted/unavailable tracks (available=False or 404 ObjectNotFound) are skipped
+        before items/add so Tidal cannot remap them onto a live track and create same-release
+        duplicates, while different-ISRC releases on separate albums remain preserved.
+        """
+        from tidalapi.exceptions import ObjectNotFound
+
+        def _mk(tid, isrc, title, artist_name, item_uuid=None):
+            t = MagicMock(id=tid, isrc=isrc, title=title, item_uuid=item_uuid)
+            t.artist = type("Artist", (), {"name": artist_name})()
+            return t
+
+        mock_session = MagicMock()
+        # 68921617 is delisted (available=False), 228223770 is 404 ObjectNotFound
+        def track_lookup(tid):
+            if str(tid) == "68921617":
+                return MagicMock(available=False)
+            if str(tid) == "228223770":
+                raise ObjectNotFound("404")
+            return MagicMock(available=True)
+
+        mock_session.track.side_effect = track_lookup
+        mock_get_folder.return_value = MagicMock(id="folder_cw")
+        pl = MagicMock(id="pl_cw")
+        pl.name = "Chillwave"
+        mock_get_pls.return_value = [pl]
+
+        favs = [
+            _mk(175941190, "QZDA62137841", "Too Much To Lose", "Sun Glitters"),
+            _mk(68921617, "QZ4JJ1702717", "Too Much to Lose", "Sun Glitters"),
+            _mk(228223770, "USOLD9999999", "Delisted Track", "Old Band"),
+            _mk(216339792, "USZMA1300002", "Dionysian", "Mister Lies"),
+            _mk(216336623, "USZMA1200084", "Dionysian", "Mister Lies"),
+        ]
+        mock_fetch_tracks.return_value = (favs, 1)
+
+        mock_cache_inst = MagicMock()
+        mock_cache_service_cls.return_value = mock_cache_inst
+        mock_cache_inst.get_cached_genres.return_value = (
+            {
+                "isrc:QZDA62137841": {"primary_genre": "Chillwave", "sub_genres": []},
+                "isrc:QZ4JJ1702717": {"primary_genre": "Chillwave", "sub_genres": []},
+                "isrc:USOLD9999999": {"primary_genre": "Chillwave", "sub_genres": []},
+                "isrc:USZMA1300002": {"primary_genre": "Chillwave", "sub_genres": []},
+                "isrc:USZMA1200084": {"primary_genre": "Chillwave", "sub_genres": []},
+            },
+            [],
+        )
+
+        u = lambda n: f"00000000-0000-0000-0000-{n:012d}"
+        mock_get_playlist_tracks.return_value = [
+            _mk(175941190, "QZDA62137841", "Too Much To Lose", "Sun Glitters", item_uuid=u(1)),
+            _mk(175941190, "QZDA62137841", "Too Much To Lose", "Sun Glitters", item_uuid=u(2)),
+            _mk(216339792, "USZMA1300002", "Dionysian", "Mister Lies", item_uuid=u(3)),
+            _mk(216336623, "USZMA1200084", "Dionysian", "Mister Lies", item_uuid=u(4)),
+        ]
+        mock_sync_tracks.return_value = True
+
+        summary = run_genre_playlist_sync(mock_session, folder_name="Genres", min_genre_size=1)
+
+        # Must remove ONLY u(2) (dup 175941190), skip delisted 68921617 & 228223770 (0 added),
+        # and keep BOTH Mister Lies different-ISRC releases (u3 & u4)!
+        self.assertEqual(summary.playlists_updated, 1)
+        self.assertEqual(summary.tracks_added, 0)
+        self.assertEqual(summary.tracks_removed, 1)
+        mock_sync_tracks.assert_called_once_with(
+            mock_session,
+            "pl_cw",
+            to_add_ids=[],
+            to_remove_ids=[u(2)],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
